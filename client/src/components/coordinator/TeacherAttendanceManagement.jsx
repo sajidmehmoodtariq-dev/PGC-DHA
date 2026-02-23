@@ -20,24 +20,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../hooks/useAuth';
-import { useApiWithToast } from '../../hooks/useApiWi        {/* Teachers List */}
-        <div className="space-y-3 sm:space-y-4 overflow-hidden">
-          {Array                                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 overflow-hidden">
-                                        {/* Attendance Buttons */}
-                                        <div className="flex gap-1 sm:gap-2 min-w-0 flex-1 sm:flex-none">{Array(filteredTeachers) && filteredTeachers.map((teacher) => {
-            const teacherId = teacher._id;
-            const isExpanded = expandedTeacher === teacherId;
-            const teacherClasses = teacherLectures[teacherId] || {};
-            
-            return (
-              <div key={teacherId} className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                {/* Teacher Header */}
-                <div 
-                  className="p-3 sm:p-4 lg:p-6 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => handleTeacherClick(teacherId)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">t api from '../../services/api';
+import { useApiWithToast } from '../../hooks/useApiWithToast';
+import api from '../../services/api';
 
 const TeacherAttendanceManagement = () => {
   const { user } = useAuth();
