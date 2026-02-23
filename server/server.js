@@ -25,8 +25,8 @@ const corsOptions = {
     'http://localhost:5174',
     'http://localhost:3000',
     'https://pgc-blond.vercel.app',
-    'https://pgc.vercel.app',
-    "https://pgcdha.vercel.app"
+    'https://pgcdha.vercel.app',
+    "https://pgc-dha.vercel.app"
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -40,17 +40,23 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Database Connection
+// Database Connection with caching for serverless
+let isConnected = false;
+
 const connectDB = async () => {
+  if (isConnected) return;
   try {
     const conn = await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
     });
+    isConnected = true;
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error('Database connection error:', error);
-    process.exit(1);
+    // Do not call process.exit in serverless environments
   }
 };
 
@@ -93,6 +99,15 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/teacher-analytics', teacherAnalyticsRoutes);
 app.use('/api/student-profiles', studentProfileRoutes);
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'PGC-DHA API is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({
@@ -102,10 +117,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Error handling middleware
-const { errorHandler } = require('./middleware/errorHandler');
-app.use(errorHandler);
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -113,6 +124,10 @@ app.use((req, res) => {
     message: 'Route not found'
   });
 });
+
+// Error handling middleware (must be after 404 handler)
+const { errorHandler } = require('./middleware/errorHandler');
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
