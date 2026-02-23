@@ -401,9 +401,9 @@ const EnquiryCorrespondenceReport = ({ config }) => {
       {/* Details Modal */}
       {showDetailsModal && selectedStudent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-t-2xl flex-shrink-0">
               <div className="flex justify-between items-center">
                 <div>
                   <h3 className="text-xl font-bold">
@@ -424,8 +424,8 @@ const EnquiryCorrespondenceReport = ({ config }) => {
               </div>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
+            {/* Modal Content with Scroll */}
+            <div className="flex-1 overflow-y-auto p-6">
               <div className="mb-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
                   <div>
@@ -484,7 +484,7 @@ const EnquiryCorrespondenceReport = ({ config }) => {
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end">
+            <div className="bg-gray-50 px-6 py-4 flex justify-end rounded-b-2xl flex-shrink-0">
               <Button onClick={closeDetailsModal} variant="outline">
                 Close
               </Button>
@@ -917,8 +917,8 @@ const StudentCorrespondenceReport = ({ config }) => {
       {/* Details Modal */}
       {showDetailsModal && selectedStudent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-12 w-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center">
@@ -943,7 +943,7 @@ const StudentCorrespondenceReport = ({ config }) => {
                 </button>
               </div>
             </div>
-            <div className="p-6">
+            <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-4">
                 {selectedStudent.receptionistRemarks.map((remark, index) => (
                   <div key={index} className="bg-gray-50 rounded-lg p-4">

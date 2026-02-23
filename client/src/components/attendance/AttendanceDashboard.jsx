@@ -219,11 +219,11 @@ const AttendanceDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Attendance Dashboard</h1>
-          <p className="text-gray-600">Mark and manage attendance for your assigned classes</p>
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Attendance Dashboard</h1>
+          <p className="text-sm sm:text-base text-gray-600">Mark and manage attendance for your assigned classes</p>
         </div>
 
         {assignedClasses.length === 0 ? (
@@ -235,9 +235,9 @@ const AttendanceDashboard = () => {
         ) : (
           <>
             {/* Controls */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-              <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                <div className="flex flex-col md:flex-row gap-4 flex-1">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
                   {/* Class Selection */}
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -246,7 +246,7 @@ const AttendanceDashboard = () => {
                     <select
                       value={selectedClass}
                       onChange={(e) => setSelectedClass(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
                     >
                       {assignedClasses.map(cls => (
                         <option key={cls._id} value={cls._id}>
@@ -257,7 +257,7 @@ const AttendanceDashboard = () => {
                   </div>
 
                   {/* Date Selection */}
-                  <div>
+                  <div className="sm:w-auto">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Date
                     </label>
@@ -266,13 +266,13 @@ const AttendanceDashboard = () => {
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       max={new Date().toISOString().split('T')[0]}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
                     />
                   </div>
                 </div>
 
                 {/* Date Navigation */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center sm:justify-start gap-2">
                   <button
                     onClick={() => {
                       const prevDate = new Date(selectedDate);
@@ -308,17 +308,17 @@ const AttendanceDashboard = () => {
               {/* Class Info */}
               {classInfo && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600">
                     <div className="flex items-center gap-2">
-                      <GraduationCap className="h-4 w-4" />
+                      <GraduationCap className="h-3 w-3 sm:h-4 sm:w-4" />
                       <span>{classInfo.grade} {classInfo.program}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
+                      <MapPin className="h-3 w-3 sm:h-4 sm:w-4" />
                       <span>{classInfo.campus} Campus - Floor {classInfo.floor}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
+                      <Users className="h-3 w-3 sm:h-4 sm:w-4" />
                       <span>{classStudents.length} Students</span>
                     </div>
                   </div>
@@ -328,93 +328,96 @@ const AttendanceDashboard = () => {
 
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="border-b border-gray-200">
-                <nav className="flex">
+              <div className="border-b border-gray-200 overflow-x-auto">
+                <nav className="flex min-w-max">
                   <button
                     onClick={() => setActiveTab('students')}
-                    className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                    className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                       activeTab === 'students'
                         ? 'border-blue-500 text-blue-600 bg-blue-50'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      Student Attendance
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <Users className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Student Attendance</span>
+                      <span className="sm:hidden">Students</span>
                     </div>
                   </button>
                   <button
                     onClick={() => setActiveTab('teachers')}
-                    className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                    className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                       activeTab === 'teachers'
                         ? 'border-blue-500 text-blue-600 bg-blue-50'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <UserCheck className="h-4 w-4" />
-                      Teacher Attendance
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <UserCheck className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">Teacher Attendance</span>
+                      <span className="sm:hidden">Teachers</span>
                     </div>
                   </button>
                 </nav>
               </div>
 
               {activeTab === 'students' && (
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   {/* Student Attendance Stats */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-gray-900">{stats.totalStudents}</div>
-                      <div className="text-sm text-gray-600">Total</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="bg-gray-50 rounded-lg p-3 sm:p-4 text-center">
+                      <div className="text-lg sm:text-2xl font-bold text-gray-900">{stats.totalStudents}</div>
+                      <div className="text-xs sm:text-sm text-gray-600">Total</div>
                     </div>
-                    <div className="bg-green-50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-green-600">{stats.presentCount}</div>
-                      <div className="text-sm text-green-600">Present</div>
+                    <div className="bg-green-50 rounded-lg p-3 sm:p-4 text-center">
+                      <div className="text-lg sm:text-2xl font-bold text-green-600">{stats.presentCount}</div>
+                      <div className="text-xs sm:text-sm text-green-600">Present</div>
                     </div>
-                    <div className="bg-red-50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-red-600">{stats.absentCount}</div>
-                      <div className="text-sm text-red-600">Absent</div>
+                    <div className="bg-red-50 rounded-lg p-3 sm:p-4 text-center">
+                      <div className="text-lg sm:text-2xl font-bold text-red-600">{stats.absentCount}</div>
+                      <div className="text-xs sm:text-sm text-red-600">Absent</div>
                     </div>
-                    <div className="bg-yellow-50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-yellow-600">{stats.lateCount}</div>
-                      <div className="text-sm text-yellow-600">Late</div>
+                    <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 text-center">
+                      <div className="text-lg sm:text-2xl font-bold text-yellow-600">{stats.lateCount}</div>
+                      <div className="text-xs sm:text-sm text-yellow-600">Late</div>
                     </div>
-                    <div className="bg-orange-50 rounded-lg p-4 text-center">
-                      <div className="text-2xl font-bold text-orange-600">{stats.unmarked}</div>
-                      <div className="text-sm text-orange-600">Unmarked</div>
+                    <div className="bg-orange-50 rounded-lg p-3 sm:p-4 text-center col-span-2 sm:col-span-1">
+                      <div className="text-lg sm:text-2xl font-bold text-orange-600">{stats.unmarked}</div>
+                      <div className="text-xs sm:text-sm text-orange-600">Unmarked</div>
                     </div>
                   </div>
 
                   {/* Student Attendance Controls */}
-                  <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                  <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                       <input
                         type="text"
                         placeholder="Search by name, father name..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
                       />
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button
                         onClick={markAllPresent}
                         variant="outline"
                         size="sm"
-                        className="text-green-600 hover:bg-green-50"
+                        className="text-green-600 hover:bg-green-50 text-xs sm:text-sm"
                       >
-                        <CheckCircle2 className="h-4 w-4 mr-1" />
-                        Mark All Present
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                        <span className="sm:hidden">All Present</span>
+                        <span className="hidden sm:inline">Mark All Present</span>
                       </Button>
                       <Button
                         onClick={clearAllAttendance}
                         variant="outline"
                         size="sm"
-                        className="text-gray-600 hover:bg-gray-50"
+                        className="text-gray-600 hover:bg-gray-50 text-xs sm:text-sm"
                       >
-                        <RotateCcw className="h-4 w-4 mr-1" />
+                        <RotateCcw className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                         Clear All
                       </Button>
                     </div>
@@ -429,26 +432,24 @@ const AttendanceDashboard = () => {
                       </div>
                     ) : (
                       filteredStudents.map((student) => (
-                        <div key={student._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div key={student._id} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-lg">
                           <div className="flex-1">
-                            <div className="flex items-center gap-4">
-                              <div className="flex-1">
-                                <div className="font-medium text-gray-900">
-                                  {`${student.fullName?.firstName || ''} ${student.fullName?.lastName || ''}`.trim()}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                  Roll: {student.rollNumber || 'N/A'} | Father: {student.fatherName || 'N/A'}
-                                </div>
-                              </div>
+                            <div className="font-medium text-gray-900 text-sm sm:text-base">
+                              {`${student.fullName?.firstName || ''} ${student.fullName?.lastName || ''}`.trim()}
+                            </div>
+                            <div className="text-xs sm:text-sm text-gray-500 mt-1">
+                              <span className="block sm:inline">Roll: {student.rollNumber || 'N/A'}</span>
+                              <span className="hidden sm:inline"> | </span>
+                              <span className="block sm:inline">Father: {student.fatherName || 'N/A'}</span>
                             </div>
                           </div>
                           
-                          <div className="flex gap-2">
+                          <div className="flex gap-1 sm:gap-2">
                             {['Present', 'Absent', 'Late'].map((status) => (
                               <button
                                 key={status}
                                 onClick={() => handleStudentAttendanceChange(student._id, status)}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                                   studentAttendance[student._id] === status
                                     ? status === 'Present'
                                       ? 'bg-green-600 text-white'
@@ -458,7 +459,8 @@ const AttendanceDashboard = () => {
                                     : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
                                 }`}
                               >
-                                {status}
+                                <span className="sm:hidden">{status.charAt(0)}</span>
+                                <span className="hidden sm:inline">{status}</span>
                               </button>
                             ))}
                           </div>

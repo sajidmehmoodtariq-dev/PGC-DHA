@@ -22,9 +22,11 @@ app.use(helmet({
 const corsOptions = {
   origin: [
     'http://localhost:5173',
+    'http://localhost:5174',
     'http://localhost:3000',
     'https://pgc-blond.vercel.app',
-    'https://pgc.vercel.app'
+    'https://pgc.vercel.app',
+    "https://pgcdha.vercel.app"
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -66,6 +68,12 @@ const attendanceRoutes = require('./routes/attendance');
 const principalEnquiriesRoutes = require('./routes/principalEnquiries');
 const correspondenceRoutes = require('./routes/correspondence');
 const timetableRoutes = require('./routes/timetable');
+const examinationRoutes = require('./routes/examinations');
+const teacherAttendanceRoutes = require('./routes/teacherAttendance');
+const analyticsRoutes = require('./routes/analytics');
+const notificationRoutes = require('./routes/notifications');
+const teacherAnalyticsRoutes = require('./routes/teacherAnalytics');
+const studentProfileRoutes = require('./routes/studentProfiles');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -75,9 +83,15 @@ app.use('/api/students', studentRoutes);
 app.use('/api/remarks', remarksRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/teacher-attendance', teacherAttendanceRoutes);
 app.use('/api/enquiries', principalEnquiriesRoutes);
 app.use('/api/correspondence', correspondenceRoutes);
 app.use('/api/timetable', timetableRoutes);
+app.use('/api/examinations', examinationRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/teacher-analytics', teacherAnalyticsRoutes);
+app.use('/api/student-profiles', studentProfileRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

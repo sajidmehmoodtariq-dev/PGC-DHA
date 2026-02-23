@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApiWithToast } from '../../hooks/useApiWithToast';
 import { 
   Calendar, 
@@ -25,10 +25,20 @@ const TimetableManagement = ({ user }) => {
   const [editingEntry, setEditingEntry] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const timeSlots = [
-    '08:00', '09:00', '10:00', '11:00', '12:00', 
-    '13:00', '14:00', '15:00', '16:00', '17:00'
-  ];
+  // Derive time rows dynamically from existing timetable start times; fallback to hourly slots
+  const defaultSlots = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00'];
+  const toMinutes = (t) => {
+    const [h, m] = (t || '00:00').split(':').map(Number);
+    return h * 60 + m;
+  };
+  const timeSlots = useMemo(() => {
+    const unique = new Set();
+    (timetable || []).forEach(e => {
+      if (e?.startTime) unique.add(e.startTime);
+    });
+    if (unique.size === 0) return defaultSlots;
+    return Array.from(unique).sort((a, b) => toMinutes(a) - toMinutes(b));
+  }, [timetable]);
   
   const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   
@@ -71,7 +81,7 @@ const TimetableManagement = ({ user }) => {
         if (teachersRes.success) setTeachers(teachersRes.data || []);
       } else if (user?.role === 'Teacher') {
         // Check if teacher is floor incharge
-        const floorResponse = await callApi(`/api/classes/floor-incharge/${user.id}`, 'GET');
+        const floorResponse = await callApi(`/api/classes/floor-incharge/${user._id}`, 'GET');
         if (floorResponse.success && floorResponse.data.floors?.length > 0) {
           // Get classes and teachers for their floors only
           const floors = floorResponse.data.floors.join(',');
@@ -105,7 +115,7 @@ const TimetableManagement = ({ user }) => {
         endpoint = `/api/timetable/week/${selectedWeek}`;
       } else if (user?.role === 'Teacher') {
         // Check if teacher is floor incharge
-        const floorResponse = await callApi(`/api/classes/floor-incharge/${user.id}`, 'GET');
+        const floorResponse = await callApi(`/api/classes/floor-incharge/${user._id}`, 'GET');
         if (floorResponse.success && floorResponse.data.floors?.length > 0) {
           // Get timetable for their floors only
           const floors = floorResponse.data.floors.join(',');
@@ -242,30 +252,26 @@ const TimetableManagement = ({ user }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-              <select
+              <input
+                type="time"
+                step="60"
                 value={formData.startTime}
                 onChange={(e) => setFormData({...formData, startTime: e.target.value})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-              >
-                {timeSlots.map(time => (
-                  <option key={time} value={time}>{time}</option>
-                ))}
-              </select>
+              />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-              <select
+              <input
+                type="time"
+                step="60"
                 value={formData.endTime}
                 onChange={(e) => setFormData({...formData, endTime: e.target.value})}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-              >
-                {timeSlots.map(time => (
-                  <option key={time} value={time}>{time}</option>
-                ))}
-              </select>
+              />
             </div>
           </div>
           
@@ -281,7 +287,10 @@ const TimetableManagement = ({ user }) => {
                 <option value="">Select Teacher</option>
                 {teachers.map(teacher => (
                   <option key={teacher._id} value={teacher._id}>
-                    {teacher.name}
+                    {teacher.fullName?.firstName && teacher.fullName?.lastName 
+                      ? `${teacher.fullName.firstName} ${teacher.fullName.lastName}`
+                      : teacher.name || teacher.userName || 'Unknown Teacher'
+                    }
                   </option>
                 ))}
               </select>
@@ -458,7 +467,10 @@ const TimetableManagement = ({ user }) => {
                                   {entry.subject}
                                 </p>
                                 <p className="text-blue-700 text-xs truncate">
-                                  {entry.teacher?.name}
+                                  {entry.teacher?.fullName?.firstName && entry.teacher?.fullName?.lastName 
+                                    ? `${entry.teacher.fullName.firstName} ${entry.teacher.fullName.lastName}`
+                                    : entry.teacher?.name || entry.teacher?.userName || 'Unknown Teacher'
+                                  }
                                 </p>
                                 <p className="text-blue-600 text-xs truncate">
                                   {entry.class?.className}

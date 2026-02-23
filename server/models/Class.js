@@ -43,7 +43,18 @@ const ClassSchema = new mongoose.Schema({
   // Program/Subject
   program: {
     type: String,
-    enum: ['ICS', 'ICOM', 'Pre Engineering', 'Pre Medical'],
+    enum: [
+      'ICS', 
+      'ICS-PHY',      // ICS with Physics
+      'ICS-STAT',     // ICS with Statistics  
+      'ICOM', 
+      'Pre Engineering', 
+      'Pre Medical',
+      'FA',           // Faculty of Arts
+      'FA IT',        // Faculty of Arts with IT
+      'FSc',          // Faculty of Science
+      'Commerce'      // Commerce
+    ],
     required: true
   },
   
@@ -52,7 +63,7 @@ const ClassSchema = new mongoose.Schema({
     type: Number,
     default: 50,
     min: 1,
-    max: 50
+    max: 120
   },
   
   // Current Student Count (calculated field)
@@ -151,6 +162,14 @@ ClassSchema.virtual('floorDescription').get(function() {
   return floorNames[this.floor] || 'Unknown Floor';
 });
 
+// Virtual for frontend floor format ('1st', '2nd')
+ClassSchema.virtual('floorDisplay').get(function() {
+  // Map numeric floor to grade-based display for frontend
+  if (this.grade === '11th') return '1st';
+  if (this.grade === '12th') return '2nd';
+  return '1st';
+});
+
 // Virtual to check if class is full
 ClassSchema.virtual('isFull').get(function() {
   return this.currentStudents >= this.maxStudents;
@@ -215,19 +234,29 @@ ClassSchema.methods.removeTeacher = function(teacherId) {
 // Method to check if user can mark attendance for this class
 ClassSchema.methods.canMarkAttendance = function(userId) {
   // Class incharge can always mark attendance
-  if (this.classIncharge && this.classIncharge.toString() === userId.toString()) {
-    return { canMark: true, role: 'Class Incharge' };
+  if (this.classIncharge) {
+    // Handle both populated (object) and non-populated (ObjectId) classIncharge
+    const classInchargeId = this.classIncharge._id || this.classIncharge;
+    if (classInchargeId.toString() === userId.toString()) {
+      return { canMark: true, role: 'Class Incharge' };
+    }
   }
   
   // Floor incharge can mark attendance for any class on their floor
-  if (this.floorIncharge && this.floorIncharge.toString() === userId.toString()) {
-    return { canMark: true, role: 'Floor Incharge' };
+  if (this.floorIncharge) {
+    // Handle both populated (object) and non-populated (ObjectId) floorIncharge
+    const floorInchargeId = this.floorIncharge._id || this.floorIncharge;
+    if (floorInchargeId.toString() === userId.toString()) {
+      return { canMark: true, role: 'Floor Incharge' };
+    }
   }
   
   // Any teacher assigned to this class can mark attendance
-  const teacherAssignment = this.teachers.find(t => 
-    t.teacherId.toString() === userId.toString() && t.isActive
-  );
+  const teacherAssignment = this.teachers.find(t => {
+    // Handle both populated (object) and non-populated (ObjectId) teacherId
+    const teacherId = t.teacherId._id || t.teacherId;
+    return teacherId.toString() === userId.toString() && t.isActive;
+  });
   if (teacherAssignment) {
     return { canMark: true, role: 'Subject Teacher', subject: teacherAssignment.subject };
   }
@@ -239,13 +268,17 @@ ClassSchema.methods.canMarkAttendance = function(userId) {
 ClassSchema.methods.updateStudentCount = async function() {
   const User = mongoose.model('User');
   
-  // Simplified count query - just check for students assigned to this class
+  // More comprehensive query to find students - use any one of the valid conditions
   const count = await User.countDocuments({ 
     classId: this._id,
     role: 'Student',
+    // Look for active students (not deleted) - status !== 3 means not deleted
+    status: { $ne: 3 },
+    // Students should be at level 5 (admitted) OR have been approved/active
     $or: [
-      { prospectusStage: 5 },
-      { enquiryLevel: 5 }
+      { prospectusStage: { $gte: 5 } },  // Changed from exact 5 to >= 5
+      { enquiryLevel: { $gte: 5 } },     // Changed from exact 5 to >= 5
+      { isActive: true, isApproved: true } // Alternative: active & approved
     ]
   });
   

@@ -8,8 +8,15 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 const StudentAttendanceReports = ({ config }) => {
-  const { toast } = useToast();
+  console.log('StudentAttendanceReports: Component rendering, config:', config);
+  
+  const toastContext = useToast();
+  const { addToast } = toastContext || {};
+  
+  console.log('StudentAttendanceReports: Toast context:', toastContext);
+  
   const [loading, setLoading] = useState(false);
+  const [classesLoading, setClassesLoading] = useState(true);
   const [attendanceData, setAttendanceData] = useState([]);
   const [classes, setClasses] = useState([]);
   const [filters, setFilters] = useState({
@@ -22,17 +29,39 @@ const StudentAttendanceReports = ({ config }) => {
   });
   const [reportType, setReportType] = useState('summary'); // summary, detailed, analytics
 
+  const handleError = useCallback((error, context) => {
+    console.error(`StudentAttendanceReports: Error in ${context}:`, error);
+    if (addToast && typeof addToast === 'function') {
+      addToast({ type: 'error', message: `Error loading ${context}: ${error.message || 'Unknown error'}` });
+    } else {
+      console.error('StudentAttendanceReports: Toast not available, error:', error.message);
+      // Fallback - show alert if toast is not working
+      alert(`Error loading ${context}: ${error.message || 'Unknown error'}`);
+    }
+  }, [addToast]);
+
   const loadClasses = useCallback(async () => {
     try {
+      console.log('StudentAttendanceReports: Loading classes...');
+      setClassesLoading(true);
       const response = await api.get('/classes');
-      if (response.data.success) {
-        setClasses(response.data.data || []);
+      console.log('StudentAttendanceReports: Classes response:', response.data);
+      if (response.data && response.data.success) {
+        const classesData = response.data.data || response.data.classes || [];
+        setClasses(classesData);
+        console.log('StudentAttendanceReports: Classes loaded:', classesData.length);
+      } else {
+        console.error('StudentAttendanceReports: Invalid response format:', response.data);
+        handleError(new Error('Invalid response format from server'), 'classes');
       }
     } catch (error) {
-      console.error('Error loading classes:', error);
-      toast.error('Failed to load classes');
+      console.error('StudentAttendanceReports: Error loading classes:', error);
+      handleError(error, 'classes');
+    } finally {
+      console.log('StudentAttendanceReports: Setting classesLoading to false');
+      setClassesLoading(false);
     }
-  }, [toast]);
+  }, [handleError]);
 
   const loadAttendanceData = useCallback(async () => {
     if (!filters.classId) return;
@@ -51,17 +80,21 @@ const StudentAttendanceReports = ({ config }) => {
       }
     } catch (error) {
       console.error('Error loading attendance data:', error);
-      toast.error('Failed to load attendance data');
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: 'Failed to load attendance data' });
+      }
     } finally {
       setLoading(false);
     }
-  }, [filters.classId, filters.startDate, filters.endDate, toast]);
+  }, [filters.classId, filters.startDate, filters.endDate, addToast]);
 
   useEffect(() => {
+    console.log('StudentAttendanceReports: Component mounted, loading classes...');
     loadClasses();
   }, [loadClasses]);
 
   useEffect(() => {
+    console.log('StudentAttendanceReports: Filters changed, classId:', filters.classId);
     if (filters.classId) {
       loadAttendanceData();
     }
@@ -162,7 +195,9 @@ const StudentAttendanceReports = ({ config }) => {
     }
     
     doc.save(`student-attendance-${filters.startDate}-${filters.endDate}.pdf`);
-    toast.success('PDF report generated successfully');
+    if (typeof addToast === 'function') {
+      addToast({ type: 'success', message: 'PDF report generated successfully' });
+    }
   };
 
   const exportToExcel = () => {
@@ -207,10 +242,28 @@ const StudentAttendanceReports = ({ config }) => {
     }
     
     XLSX.writeFile(workbook, `student-attendance-${filters.startDate}-${filters.endDate}.xlsx`);
-    toast.success('Excel report generated successfully');
+    if (typeof addToast === 'function') {
+      addToast({ type: 'success', message: 'Excel report generated successfully' });
+    }
   };
 
   const stats = calculateAttendanceStats();
+
+  // Show loading screen while classes are being loaded
+  if (classesLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+              <span className="text-blue-600 font-medium">Loading classes...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

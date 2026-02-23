@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mail, Phone, Calendar, Shield, Save, Eye, CreditCard } from 'lucide-react';
+import { X, User, Mail, Phone, Calendar, Shield, Save, Eye, EyeOff, CreditCard, GraduationCap, BookOpen, Plus, Trash2, Award, Info } from 'lucide-react';
 import { Button } from '../ui/button';
 import { userAPI } from '../../services/api';
 import api from '../../services/api';
@@ -27,6 +27,56 @@ const UserForm = ({
   
   const [loading, setLoading] = useState(false);
   const [classes, setClasses] = useState([]);
+  
+  // Academic background data
+  const [academicBackground, setAcademicBackground] = useState({
+    matriculation: {
+      percentage: '',
+      passingYear: new Date().getFullYear(),
+      board: '',
+      subjects: []
+    },
+    intermediate: {
+      percentage: '',
+      passingYear: new Date().getFullYear(),
+      board: '',
+      subjects: []
+    }
+  });
+
+  // Common subjects for matriculation
+  const MATRICULATION_SUBJECTS = [
+    'Mathematics',
+    'Physics', 
+    'Chemistry',
+    'Biology',
+    'English',
+    'Urdu',
+    'Islamiat',
+    'Pakistan Studies',
+    'Computer Science',
+    'Economics',
+    'Accounting',
+    'Business Studies'
+  ];
+
+  // Common subjects for intermediate (11th/12th)
+  const INTERMEDIATE_SUBJECTS = [
+    'Mathematics',
+    'Physics',
+    'Chemistry', 
+    'Biology',
+    'English',
+    'Urdu',
+    'Islamiat',
+    'Pakistan Studies',
+    'Computer Science',
+    'Economics',
+    'Statistics',
+    'Psychology',
+    'Sociology',
+    'Philosophy'
+  ];
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -107,12 +157,77 @@ const UserForm = ({
         coordinatorGrade: user.coordinatorAssignment?.grade || '',
         coordinatorCampus: user.coordinatorAssignment?.campus || ''
       });
+
+      // Load academic background data if available
+      if (user.academicBackground) {
+        setAcademicBackground(user.academicBackground);
+      } else {
+        // Reset academic background for editing mode if no data
+        setAcademicBackground({
+          matriculation: {
+            percentage: '',
+            passingYear: new Date().getFullYear(),
+            board: '',
+            subjects: []
+          },
+          intermediate: {
+            percentage: '',
+            passingYear: new Date().getFullYear(),
+            board: '',
+            subjects: []
+          }
+        });
+      }
     } else {
       // For create mode, set default role based on userType or permissions
       const defaultRole = userType === 'student' ? 'Student' : (userRole === 'Receptionist') ? 'Student' : '';
       setFormData(prev => ({ ...prev, role: defaultRole }));
+      
+      // Reset academic background for create mode
+      setAcademicBackground({
+        matriculation: {
+          percentage: '',
+          passingYear: new Date().getFullYear(),
+          board: '',
+          subjects: []
+        },
+        intermediate: {
+          percentage: '',
+          passingYear: new Date().getFullYear(),
+          board: '',
+          subjects: []
+        }
+      });
     }
   }, [user, mode, userRole, userType]);
+
+  // Clear class selection when program or gender changes to avoid mismatches
+  useEffect(() => {
+    if (formData.admissionInfo.className && (formData.program || formData.gender)) {
+      // Check if the currently selected class matches the program and gender
+      const selectedClass = classes.find(cls => cls.name === formData.admissionInfo.className);
+      if (selectedClass) {
+        const programMismatch = formData.program && selectedClass.program !== formData.program;
+        const genderMismatch = formData.gender && 
+          ((formData.gender === 'Male' && selectedClass.campus !== 'Boys') ||
+           (formData.gender === 'Female' && selectedClass.campus !== 'Girls'));
+        
+        if (programMismatch || genderMismatch) {
+          // Clear the class selection if it doesn't match the program or gender
+          setFormData(prev => ({
+            ...prev,
+            admissionInfo: {
+              ...prev.admissionInfo,
+              className: ''
+            }
+          }));
+          
+          const reason = programMismatch ? 'program change' : 'gender change';
+          toast.warning(`Class selection cleared due to ${reason}. Please select a compatible class.`);
+        }
+      }
+    }
+  }, [formData.program, formData.gender, formData.admissionInfo.className, classes, toast]);
 
   // Get available roles based on permissions
   const getAvailableRoles = () => {
@@ -163,7 +278,7 @@ const UserForm = ({
       { value: 'ICOM', label: 'ICOM (Commerce)' },
       { value: 'Pre Engineering', label: 'Pre Engineering' },
       { value: 'Pre Medical', label: 'Pre Medical' },
-      { value: 'F.A', label: 'F.A (Faculty of Arts)' },
+      { value: 'FA', label: 'FA (Faculty of Arts)' },
       { value: 'FA IT', label: 'FA IT (Faculty of Arts - Information Technology)' },
       { value: 'General Science', label: 'General Science' }
     ];
@@ -218,6 +333,196 @@ const UserForm = ({
     }
 
     return true;
+  };
+
+  // Academic background helper functions
+  const addSubject = (level) => {
+    const newSubject = {
+      name: '',
+      obtainedMarks: '',
+      totalMarks: ''
+    };
+    
+    setAcademicBackground(prev => {
+      const updated = {
+        ...prev,
+        [level]: {
+          ...prev[level],
+          subjects: [...prev[level].subjects, newSubject]
+        }
+      };
+      return updated;
+    });
+  };
+
+  const removeSubject = (level, index) => {
+    setAcademicBackground(prev => {
+      const updated = {
+        ...prev,
+        [level]: {
+          ...prev[level],
+          subjects: prev[level].subjects.filter((_, i) => i !== index)
+        }
+      };
+      // Auto-calculate percentage after removing subject
+      updated[level].percentage = calculatePercentage(level, updated);
+      return updated;
+    });
+  };
+
+  const updateSubject = (level, index, field, value) => {
+    setAcademicBackground(prev => {
+      const updated = {
+        ...prev,
+        [level]: {
+          ...prev[level],
+          subjects: prev[level].subjects.map((subject, i) => 
+            i === index ? { ...subject, [field]: value } : subject
+          )
+        }
+      };
+      // Auto-calculate percentage when marks change
+      if (field === 'obtainedMarks' || field === 'totalMarks') {
+        updated[level].percentage = calculatePercentage(level, updated);
+      }
+      return updated;
+    });
+  };
+
+  const handleAcademicBackgroundChange = (field, value) => {
+    const fieldParts = field.split('.');
+    if (fieldParts.length === 2) {
+      const [section, subField] = fieldParts;
+      setAcademicBackground(prev => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [subField]: value
+        }
+      }));
+    }
+  };
+
+  // Updated calculatePercentage to work with the data structure
+  const calculatePercentage = (level, data = academicBackground) => {
+    const subjects = data[level].subjects;
+    if (subjects.length === 0) return '';
+    
+    const totalObtained = subjects.reduce((sum, subject) => {
+      return sum + (parseFloat(subject.obtainedMarks) || 0);
+    }, 0);
+    
+    const totalMaxMarks = subjects.reduce((sum, subject) => {
+      return sum + (parseFloat(subject.totalMarks) || 0);
+    }, 0);
+    
+    if (totalMaxMarks === 0) return '';
+    
+    const percentage = ((totalObtained / totalMaxMarks) * 100).toFixed(2);
+    return percentage;
+  };
+
+  // Check if academic data exists and has content
+  const hasAcademicData = () => {
+    const matricHasData = academicBackground.matriculation.percentage || 
+                         academicBackground.matriculation.subjects.length > 0 ||
+                         academicBackground.matriculation.board;
+    
+    // Only check intermediate data for 12th grade students
+    const interHasData = formData.admissionInfo?.grade === '12th' ? (
+      academicBackground.intermediate.percentage || 
+      academicBackground.intermediate.subjects.length > 0 ||
+      academicBackground.intermediate.board
+    ) : false;
+    
+    return matricHasData || interHasData;
+  };
+
+  // Save academic background using the dedicated academic records endpoint
+  const saveAcademicBackground = async (studentId) => {
+    try {
+      // Prepare academic records data in the format expected by the server
+      const academicRecords = {};
+
+      // Process matriculation data
+      if (academicBackground.matriculation.percentage || 
+          academicBackground.matriculation.subjects.length > 0 ||
+          academicBackground.matriculation.board) {
+        
+        const validMatricSubjects = academicBackground.matriculation.subjects.filter(subject => 
+          subject.name && subject.obtainedMarks && subject.totalMarks
+        ).map(subject => ({
+          name: subject.name.trim(),
+          totalMarks: Number(subject.totalMarks),
+          obtainedMarks: Number(subject.obtainedMarks),
+          percentage: subject.totalMarks > 0 ? 
+            ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0
+        }));
+
+        academicRecords.matriculation = {
+          percentage: academicBackground.matriculation.subjects.length > 0 ? 
+            calculatePercentage('matriculation') : academicBackground.matriculation.percentage,
+          passingYear: academicBackground.matriculation.passingYear || undefined,
+          board: academicBackground.matriculation.board || undefined,
+          subjects: validMatricSubjects
+        };
+      }
+
+      // Process intermediate data (map to previousGrade) - only for 12th grade students
+      if (formData.admissionInfo?.grade === '12th' && (
+          academicBackground.intermediate.percentage || 
+          academicBackground.intermediate.subjects.length > 0 ||
+          academicBackground.intermediate.board)) {
+        
+        const validInterSubjects = academicBackground.intermediate.subjects.filter(subject => 
+          subject.name && subject.obtainedMarks && subject.totalMarks
+        ).map(subject => ({
+          name: subject.name.trim(),
+          totalMarks: Number(subject.totalMarks),
+          obtainedMarks: Number(subject.obtainedMarks),
+          percentage: subject.totalMarks > 0 ? 
+            ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0,
+          term: 'Annual' // Default term for intermediate
+        }));
+
+        // Only create previousGrade if we have actual data
+        if (academicBackground.intermediate.percentage || validInterSubjects.length > 0) {
+          academicRecords.previousGrade = {
+            grade: '10th', // If the student is in 11th/12th, their previous grade is 10th (matriculation level)
+            percentage: academicBackground.intermediate.subjects.length > 0 ? 
+              calculatePercentage('intermediate') : academicBackground.intermediate.percentage,
+            academicYear: academicBackground.intermediate.passingYear ? 
+              `${academicBackground.intermediate.passingYear-1}-${academicBackground.intermediate.passingYear}` : undefined,
+            subjects: validInterSubjects
+          };
+          
+          // Clean up undefined fields
+          if (!academicRecords.previousGrade.academicYear) {
+            delete academicRecords.previousGrade.academicYear;
+          }
+        }
+      }
+
+      // Only save if there's actual data
+      if (Object.keys(academicRecords).length > 0) {
+        console.log('Saving academic records:', academicRecords);
+        
+        const response = await api.patch(`/students/${studentId}/academic-records`, {
+          academicRecords
+        });
+        
+        if (response.data.success) {
+          console.log('Academic background saved successfully');
+        } else {
+          throw new Error(response.data.message || 'Failed to save academic background');
+        }
+      } else {
+        console.log('No academic data to save');
+      }
+    } catch (error) {
+      console.error('Error in saveAcademicBackground:', error);
+      throw error;
+    }
   };
 
   // Handle form submission
@@ -278,6 +583,17 @@ const UserForm = ({
         if (!formData.admissionInfo.grade) {
           newErrors['admissionInfo.grade'] = 'Grade is required for admitted students';
         }
+        if (formData.admissionInfo.grade && (!formData.admissionInfo.className || !formData.program || !formData.gender)) {
+          if (!formData.program) {
+            newErrors['program'] = 'Program is required for class assignment';
+          }
+          if (!formData.gender) {
+            newErrors['gender'] = 'Gender is required for class assignment';  
+          }
+          if (!formData.admissionInfo.className) {
+            newErrors['admissionInfo.className'] = 'Class assignment is required for admitted students';
+          }
+        }
       }
     }
 
@@ -317,7 +633,8 @@ const UserForm = ({
         program: 'Program',
         phoneNumber: 'Phone Number',
         enquiryLevel: 'Enquiry Level',
-        'admissionInfo.grade': 'Grade'
+        'admissionInfo.grade': 'Grade',
+        'admissionInfo.className': 'Class Assignment'
       };
 
       const missingFieldNames = missingFields.map(field => fieldLabels[field] || field);
@@ -402,6 +719,13 @@ const UserForm = ({
         // Keep general fields that might be useful for all roles
       }
 
+      // Add academic background data for students
+      if (isStudentRole() && academicBackground) {
+        // Don't include academic data in main user creation/update
+        // We'll handle it separately via the academic records endpoint
+        console.log('Academic background data will be saved separately');
+      }
+
       console.log('Submitting data:', submitData);
 
       if (mode === 'create') {
@@ -411,16 +735,29 @@ const UserForm = ({
       }
 
       if (response.success) {
-        // For students, the enquiry level sync should already be handled by the main user update
-        // But let's also sync to the students endpoint for enquiry management consistency
+        // For students, sync enquiry level to students endpoint only if it has changed
         if (isStudentRole() && submitData.enquiryLevel && (user?._id || response.data?.user?._id)) {
           try {
             const studentId = user?._id || response.data.user._id;
-            await api.put(`/students/${studentId}/level`, {
-              level: submitData.enquiryLevel,
-              notes: `Level updated from user ${mode === 'create' ? 'creation' : 'edit'} form`
-            });
-            console.log('Successfully synced enquiry level to students endpoint');
+            const currentLevel = user?.enquiryLevel || user?.prospectusStage;
+            
+            // Only sync if the level has actually changed
+            if (currentLevel !== submitData.enquiryLevel) {
+              const levelResponse = await api.put(`/students/${studentId}/level`, {
+                level: submitData.enquiryLevel,
+                notes: `Level updated from user ${mode === 'create' ? 'creation' : 'edit'} form`
+              });
+              
+              if (levelResponse.data.success) {
+                if (levelResponse.data.data?.unchanged) {
+                  console.log('Level sync confirmed - student was already at the correct level');
+                } else {
+                  console.log('Successfully synced enquiry level to students endpoint');
+                }
+              }
+            } else {
+              console.log('Level unchanged, skipping sync to students endpoint');
+            }
           } catch (levelUpdateError) {
             console.warn('Failed to sync enquiry level to students endpoint:', levelUpdateError);
             // Don't fail the whole operation for this
@@ -428,7 +765,71 @@ const UserForm = ({
         }
 
         toast.success(`User ${mode === 'create' ? 'created' : 'updated'} successfully`);
-        onSave();
+        
+        // Check if it's a new student with class assignment
+        if (mode === 'create' && isStudentRole() && submitData.admissionInfo?.className) {
+          const createdStudent = response.data.user || response.data;
+          
+          // Find the class by name to get its ID
+          try {
+            const selectedClass = classes.find(cls => cls.name === submitData.admissionInfo.className);
+            if (selectedClass) {
+              console.log('Assigning student to class:', selectedClass.name, selectedClass._id);
+              
+              // Call the assign-class API
+              const assignResponse = await api.post(`/students/${createdStudent._id}/assign-class`, {
+                classId: selectedClass._id,
+                grade: submitData.admissionInfo.grade,
+                program: submitData.program
+              });
+              
+              if (assignResponse.data.success) {
+                console.log('Student successfully assigned to class');
+                toast.success(`Student assigned to ${selectedClass.name} successfully`);
+              } else {
+                console.error('Failed to assign student to class:', assignResponse.data.message);
+                toast.error('Student created but class assignment failed. Please assign manually.');
+              }
+            } else {
+              console.error('Selected class not found in available classes');
+              toast.error('Student created but class assignment failed. Please assign manually.');
+            }
+          } catch (assignError) {
+            console.error('Error assigning student to class:', assignError);
+            toast.error('Student created but class assignment failed. Please assign manually.');
+          }
+          
+          // Save academic background data separately if user is a student
+          if (isStudentRole() && response.data.user && hasAcademicData()) {
+            try {
+              await saveAcademicBackground(response.data.user._id);
+              toast.success('Academic background saved successfully');
+            } catch (academicError) {
+              console.error('Error saving academic background:', academicError);
+              // Show more specific error message
+              toast.warning('Student created but academic background could not be saved. Please add it later.');
+            }
+          }
+          
+          onSave(); // Close the form and refresh the list
+        } else {
+          // For existing users or students without class assignment
+          // Save academic background data separately if user is a student  
+          if (isStudentRole() && response.data && hasAcademicData()) {
+            try {
+              const userId = response.data.user?._id || response.data._id || user?._id;
+              if (userId) {
+                await saveAcademicBackground(userId);
+                toast.success('Academic background saved successfully');
+              }
+            } catch (academicError) {
+              console.error('Error saving academic background:', academicError);
+              // Show more specific error message
+              toast.warning('User updated but academic background could not be saved. Please add it later.');
+            }
+          }
+          onSave();
+        }
       } else {
         console.error('User creation/update failed:', response);
         toast.error(response.message || `Failed to ${mode} user`);
@@ -847,6 +1248,54 @@ const UserForm = ({
                   </div>
                 )}
 
+                {/* Class Assignment - Only for Level 5 students with grade, program and gender selected */}
+                {isStudentRole() && formData.enquiryLevel >= 5 && formData.admissionInfo.grade && formData.program && formData.gender && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <span className="flex items-center gap-2">
+                        Class Assignment *
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                          Grade {formData.admissionInfo.grade}
+                        </span>
+                      </span>
+                    </label>
+                    <select
+                      name="admissionInfo.className"
+                      value={formData.admissionInfo.className}
+                      onChange={handleInputChange}
+                      disabled={isReadOnly}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent ${errors['admissionInfo.className'] ? 'border-red-300' : 'border-gray-300'
+                        } ${isReadOnly ? 'bg-gray-50' : ''}`}
+                    >
+                      <option value="">Select Class</option>
+                      {classes
+                        .filter(cls => {
+                          // Filter by grade and program
+                          const matchesGradeAndProgram = cls.grade === formData.admissionInfo.grade && 
+                                                        cls.program === formData.program;
+                          
+                          // Filter by gender/campus if gender is selected
+                          let matchesGender = true;
+                          if (formData.gender) {
+                            const requiredCampus = formData.gender === 'Male' ? 'Boys' : 'Girls';
+                            matchesGender = cls.campus === requiredCampus;
+                          }
+                          
+                          return matchesGradeAndProgram && matchesGender;
+                        })
+                        .map(cls => (
+                          <option key={cls._id} value={cls.name}>
+                            {cls.name} - {cls.campus} Campus ({cls.capacity ? `${cls.enrolled || 0}/${cls.capacity} students` : 'No capacity limit'})
+                          </option>
+                        ))}
+                    </select>
+                    {errors['admissionInfo.className'] && <p className="text-red-500 text-xs mt-1">{errors['admissionInfo.className']}</p>}
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select a class for the admitted student based on their grade, program ({formData.program || 'No program selected'}) and gender ({formData.gender || 'No gender selected'})
+                    </p>
+                  </div>
+                )}
+
                 {/* Previous School - Only for students */}
                 {isStudentRole() && (
                   <div>
@@ -866,41 +1315,322 @@ const UserForm = ({
                   </div>
                 )}
 
-                {/* Matriculation Marks - Only for students */}
+                {/* Academic Background - Only for students - Full width */}
                 {isStudentRole() && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Matriculation Obtained Marks
-                      </label>
-                      <input
-                        type="number"
-                        name="matricMarks"
-                        value={formData.matricMarks}
-                        onChange={handleInputChange}
-                        placeholder="Enter obtained marks"
-                        disabled={isReadOnly}
-                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent ${errors.matricMarks ? 'border-red-300' : 'border-gray-300'
-                          } ${isReadOnly ? 'bg-gray-50' : ''}`}
-                      />
-                      {errors.matricMarks && <p className="text-red-500 text-xs mt-1">{errors.matricMarks}</p>}
+                  <div className="col-span-2 space-y-6 p-4 bg-gray-50 rounded-lg border">
+                    <div className="flex items-center gap-2 mb-4">
+                      <GraduationCap className="h-5 w-5 text-primary" />
+                      <h4 className="font-medium text-gray-900">Academic Background</h4>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Matriculation Total Marks
-                      </label>
-                      <input
-                        type="number"
-                        name="matricTotal"
-                        value={formData.matricTotal}
-                        onChange={handleInputChange}
-                        placeholder="Enter total marks"
-                        disabled={isReadOnly}
-                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent ${errors.matricTotal ? 'border-red-300' : 'border-gray-300'
-                          } ${isReadOnly ? 'bg-gray-50' : ''}`}
-                      />
-                      {errors.matricTotal && <p className="text-red-500 text-xs mt-1">{errors.matricTotal}</p>}
+                    
+                    {/* Matriculation Section */}
+                    <div className="space-y-4 p-4 bg-white rounded-lg border">
+                      <h5 className="font-medium text-gray-800 flex items-center gap-2">
+                        <BookOpen className="h-4 w-4" />
+                        Matriculation (10th Grade)
+                      </h5>
+                      
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Percentage
+                            {academicBackground.matriculation.subjects.length > 0 && (
+                              <span className="text-xs text-green-600 ml-1">(Auto-calculated)</span>
+                            )}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={
+                              academicBackground.matriculation.subjects.length > 0 
+                                ? calculatePercentage('matriculation') 
+                                : academicBackground.matriculation.percentage
+                            }
+                            onChange={(e) => {
+                              if (academicBackground.matriculation.subjects.length === 0) {
+                                handleAcademicBackgroundChange('matriculation.percentage', e.target.value);
+                              }
+                            }}
+                            placeholder="Enter percentage"
+                            disabled={isReadOnly || academicBackground.matriculation.subjects.length > 0}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300 ${
+                              academicBackground.matriculation.subjects.length > 0 ? 'bg-green-50' : ''
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Passing Year
+                          </label>
+                          <input
+                            type="number"
+                            value={academicBackground.matriculation.passingYear}
+                            onChange={(e) => handleAcademicBackgroundChange('matriculation.passingYear', parseInt(e.target.value))}
+                            placeholder="Enter year"
+                            disabled={isReadOnly}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Board/University
+                          </label>
+                          <input
+                            type="text"
+                            value={academicBackground.matriculation.board}
+                            onChange={(e) => handleAcademicBackgroundChange('matriculation.board', e.target.value)}
+                            placeholder="Enter board name"
+                            disabled={isReadOnly}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Matriculation Subject-wise marks */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h6 className="text-sm font-medium text-gray-700">
+                            Subject-wise Marks
+                            {academicBackground.matriculation.subjects.length > 0 && (
+                              <span className="text-xs text-gray-500 ml-2">- Percentage auto-calculated</span>
+                            )}
+                          </h6>
+                          {!isReadOnly && (
+                            <Button
+                              type="button"
+                              onClick={() => addSubject('matriculation')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-primary hover:bg-primary/90"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add Subject
+                            </Button>
+                          )}
+                        </div>
+
+                        {academicBackground.matriculation.subjects.map((subject, index) => (
+                          <div key={index} className="grid grid-cols-4 gap-3 items-end p-3 bg-gray-50 rounded-lg">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                              <select
+                                value={subject.name}
+                                onChange={(e) => updateSubject('matriculation', index, 'name', e.target.value)}
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              >
+                                <option value="">Select Subject</option>
+                                {MATRICULATION_SUBJECTS.map(subjectName => (
+                                  <option key={subjectName} value={subjectName}>{subjectName}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Obtained</label>
+                              <input
+                                type="number"
+                                value={subject.obtainedMarks}
+                                onChange={(e) => updateSubject('matriculation', index, 'obtainedMarks', e.target.value)}
+                                placeholder="Marks"
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Total</label>
+                              <input
+                                type="number"
+                                value={subject.totalMarks}
+                                onChange={(e) => updateSubject('matriculation', index, 'totalMarks', e.target.value)}
+                                placeholder="Total"
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              />
+                            </div>
+                            <div>
+                              {!isReadOnly && (
+                                <Button
+                                  type="button"
+                                  onClick={() => removeSubject('matriculation', index)}
+                                  variant="outline"
+                                  className="px-2 py-1.5 text-sm text-red-600 border-red-300 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        {academicBackground.matriculation.subjects.length === 0 && (
+                          <p className="text-sm text-gray-500 text-center py-2">
+                            No matriculation subjects added.
+                          </p>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Information message for 11th grade students */}
+                    {formData.admissionInfo?.grade === '11th' && (
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center gap-2 text-blue-800">
+                          <Info className="h-4 w-4" />
+                          <span className="text-sm font-medium">
+                            For 11th Grade Students
+                          </span>
+                        </div>
+                        <p className="text-sm text-blue-700 mt-1">
+                          Intermediate (11th grade) academic records will be available once you complete your 11th grade. 
+                          Currently, only matriculation (10th grade) records are required.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Intermediate Section - Only show for 12th grade students */}
+                    {formData.admissionInfo?.grade === '12th' && (
+                      <div className="space-y-4 p-4 bg-white rounded-lg border">
+                        <h5 className="font-medium text-gray-800 flex items-center gap-2">
+                          <Award className="h-4 w-4" />
+                          Intermediate (11th Grade - Previous Year)
+                          <span className="text-xs text-gray-500 ml-2">(Only for 12th grade students)</span>
+                        </h5>
+                      
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Percentage
+                            {academicBackground.intermediate.subjects.length > 0 && (
+                              <span className="text-xs text-green-600 ml-1">(Auto-calculated)</span>
+                            )}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={
+                              academicBackground.intermediate.subjects.length > 0 
+                                ? calculatePercentage('intermediate') 
+                                : academicBackground.intermediate.percentage
+                            }
+                            onChange={(e) => {
+                              if (academicBackground.intermediate.subjects.length === 0) {
+                                handleAcademicBackgroundChange('intermediate.percentage', e.target.value);
+                              }
+                            }}
+                            placeholder="Enter percentage"
+                            disabled={isReadOnly || academicBackground.intermediate.subjects.length > 0}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300 ${
+                              academicBackground.intermediate.subjects.length > 0 ? 'bg-green-50' : ''
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Passing Year
+                          </label>
+                          <input
+                            type="number"
+                            value={academicBackground.intermediate.passingYear}
+                            onChange={(e) => handleAcademicBackgroundChange('intermediate.passingYear', parseInt(e.target.value))}
+                            placeholder="Enter year"
+                            disabled={isReadOnly}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Board/University
+                          </label>
+                          <input
+                            type="text"
+                            value={academicBackground.intermediate.board}
+                            onChange={(e) => handleAcademicBackgroundChange('intermediate.board', e.target.value)}
+                            placeholder="Enter board name"
+                            disabled={isReadOnly}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent border-gray-300"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Intermediate Subject-wise marks */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h6 className="text-sm font-medium text-gray-700">
+                            Subject-wise Marks
+                            {academicBackground.intermediate.subjects.length > 0 && (
+                              <span className="text-xs text-gray-500 ml-2">- Percentage auto-calculated</span>
+                            )}
+                          </h6>
+                          {!isReadOnly && (
+                            <Button
+                              type="button"
+                              onClick={() => addSubject('intermediate')}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-primary hover:bg-primary/90"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add Subject
+                            </Button>
+                          )}
+                        </div>
+
+                        {academicBackground.intermediate.subjects.map((subject, index) => (
+                          <div key={index} className="grid grid-cols-4 gap-3 items-end p-3 bg-gray-50 rounded-lg">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                              <select
+                                value={subject.name}
+                                onChange={(e) => updateSubject('intermediate', index, 'name', e.target.value)}
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              >
+                                <option value="">Select Subject</option>
+                                {INTERMEDIATE_SUBJECTS.map(subjectName => (
+                                  <option key={subjectName} value={subjectName}>{subjectName}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Obtained</label>
+                              <input
+                                type="number"
+                                value={subject.obtainedMarks}
+                                onChange={(e) => updateSubject('intermediate', index, 'obtainedMarks', e.target.value)}
+                                placeholder="Marks"
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Total</label>
+                              <input
+                                type="number"
+                                value={subject.totalMarks}
+                                onChange={(e) => updateSubject('intermediate', index, 'totalMarks', e.target.value)}
+                                placeholder="Total"
+                                disabled={isReadOnly}
+                                className="w-full px-2 py-1.5 text-sm border rounded-md focus:ring-1 focus:ring-primary border-gray-300"
+                              />
+                            </div>
+                            <div>
+                              {!isReadOnly && (
+                                <Button
+                                  type="button"
+                                  onClick={() => removeSubject('intermediate', index)}
+                                  variant="outline"
+                                  className="px-2 py-1.5 text-sm text-red-600 border-red-300 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        {academicBackground.intermediate.subjects.length === 0 && (
+                          <p className="text-sm text-gray-500 text-center py-2">
+                            No intermediate subjects added.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    )}
                   </div>
                 )}
 
@@ -1105,6 +1835,7 @@ const UserForm = ({
           </div>
         </form>
       </div>
+
     </div>
   );
 };

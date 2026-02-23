@@ -23,8 +23,9 @@ const useCorrespondenceData = () => {
   const CACHE_DURATION = 5 * 60 * 1000;
   const REQUEST_TIMEOUT = 15000; // 15 seconds (increased from 10)
   
-  // Abort controller
+  // Abort controller  
   const abortControllerRef = useRef(null);
+  const fetchFunctionRef = useRef(null);
 
   // Cleanup function to abort ongoing requests
   useEffect(() => {
@@ -117,12 +118,18 @@ const useCorrespondenceData = () => {
     const breakdown = {
       byLevel: calculateLevelBreakdown(correspondenceData),
       byType: {
-        levelChange: correspondenceData.filter(c => c.type === 'levelChange').length,
-        generalCorrespondence: correspondenceData.filter(c => c.type === 'generalCorrespondence').length
+        // Use backend stats if available, otherwise calculate
+        levelChange: stats.levelChanges?.total || correspondenceData.filter(c => c.isLevelChange === true).length,
+        generalCorrespondence: stats.generalCommunications?.total || correspondenceData.filter(c => c.isLevelChange === false).length
       },
       byGender: {
-        male: correspondenceData.filter(c => c.studentGender === 'male').length,
-        female: correspondenceData.filter(c => c.studentGender === 'female').length
+        // Use backend breakdown if available
+        male: stats.totalCommunications?.breakdown ? 
+          Object.values(stats.totalCommunications.breakdown).reduce((sum, level) => sum + (level.boys || 0), 0) :
+          correspondenceData.filter(c => c.studentId?.gender?.toLowerCase() === 'male').length,
+        female: stats.totalCommunications?.breakdown ? 
+          Object.values(stats.totalCommunications.breakdown).reduce((sum, level) => sum + (level.girls || 0), 0) :
+          correspondenceData.filter(c => c.studentId?.gender?.toLowerCase() === 'female').length
       },
       byMonth: {}
     };
@@ -136,16 +143,20 @@ const useCorrespondenceData = () => {
     return {
       raw: correspondenceData,
       stats: {
-        total: correspondenceData.length,
-        uniqueStudents: stats.uniqueStudentsContacted || 0,
-        levelChanges: breakdown.byType.levelChange,
-        generalCorrespondence: breakdown.byType.generalCorrespondence,
+        // Use backend-calculated stats when available
+        total: stats.totalCommunications?.total || correspondenceData.length,
+        uniqueStudents: stats.uniqueStudents?.total || stats.uniqueStudentsContacted || 0,
+        levelChanges: stats.levelChanges?.total || breakdown.byType.levelChange,
+        generalCorrespondence: stats.generalCommunications?.total || breakdown.byType.generalCorrespondence,
         recent: correspondenceData.filter(c => {
           const weekAgo = new Date();
           weekAgo.setDate(weekAgo.getDate() - 7);
           return new Date(c.timestamp) >= weekAgo;
         }).length,
-        activeStaff: [...new Set(correspondenceData.map(c => c.staffMember?.name))].filter(Boolean).length
+        activeStaff: [...new Set(correspondenceData.map(c => c.staffMember?.name))].filter(Boolean).length,
+        
+        // Include backend stats structure for detailed views
+        backendStats: stats
       },
       dateRanges: processedRanges,
       breakdown,
@@ -293,6 +304,9 @@ const useCorrespondenceData = () => {
     }
   }, [cache.data, cache.timestamp, cache.isValid, processCorrespondenceData, CACHE_DURATION]);
 
+  // Store the fetch function in a ref for stable access
+  fetchFunctionRef.current = fetchComprehensiveData;
+
   /**
    * Fetch custom date range data
    */
@@ -372,6 +386,25 @@ const useCorrespondenceData = () => {
       setIsCustomDateLoading(false);
     }
   }, [processCorrespondenceData]);
+
+  // Auto-fetch data on hook initialization (one-time only)
+  useEffect(() => {
+    const initializeData = async () => {
+      // Only fetch if we don't have data and we're not already loading
+      if (!cache.data && !isInitialLoading && !isRefreshing && fetchFunctionRef.current) {
+        console.log('Auto-fetching correspondence data on hook initialization...');
+        try {
+          await fetchFunctionRef.current();
+        } catch (error) {
+          console.error('Auto-fetch failed:', error);
+        }
+      }
+    };
+
+    // Small delay to ensure the function ref is set
+    const timeoutId = setTimeout(initializeData, 100);
+    return () => clearTimeout(timeoutId);
+  }, [cache.data, isInitialLoading, isRefreshing]); // Include dependencies but use cache.data check to prevent loops
 
   /**
    * Get filtered data based on current selections

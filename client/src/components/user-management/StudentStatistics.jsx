@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, GraduationCap, UserCheck, Clock, RefreshCw } from 'lucide-react';
+import { Users, GraduationCap, UserCheck, RefreshCw } from 'lucide-react';
 import { userAPI } from '../../services/api';
 import { Button } from '../ui/button';
 
@@ -11,7 +11,6 @@ const StudentStatistics = () => {
   const [statistics, setStatistics] = useState({
     totalStudents: 0,
     admittedStudents: 0,
-    pendingStudents: 0,
     activeStudents: 0,
     loading: true
   });
@@ -20,32 +19,45 @@ const StudentStatistics = () => {
     try {
       setStatistics(prev => ({ ...prev, loading: true }));
 
-      // Get all students
-      const response = await userAPI.getUsers({
+      // Get students with pagination to get server-side statistics
+      const params = {
         role: 'Student',
-        limit: 1000
-      });
+        page: 1,
+        limit: 25 // Use pagination to trigger server-side statistics calculation
+      };
+      console.log('StudentStatistics: Loading with params:', params);
+      
+      const response = await userAPI.getUsers(params);
+      console.log('StudentStatistics: API response:', response);
 
       if (response.success) {
+        const pagination = response.data.pagination;
+        const statistics = response.data.statistics;
         const students = response.data.users || [];
         
-        // Calculate statistics
-        const totalStudents = students.length;
-        const admittedStudents = students.filter(student => 
-          student.enquiryLevel === 5 || student.status === 'active'
+        console.log('StudentStatistics: Pagination info:', pagination);
+        console.log('StudentStatistics: Server statistics:', statistics);
+        console.log('StudentStatistics: Students in current page:', students.length);
+        
+        // Use server-provided statistics if available, otherwise fallback to pagination counts
+        const totalStudents = pagination?.totalUsers || 0;
+        
+        // Calculate estimates based on the current page sample
+        const sampleSize = Math.max(students.length, 1);
+        
+        // Admitted students are those at Level 5 (final stage)
+        const admittedInSample = students.filter(student => 
+          student.prospectusStage === 5 || student.enquiryLevel === 5
         ).length;
-        const pendingStudents = students.filter(student => 
-          student.status === 'pending'
-        ).length;
-        const activeStudents = students.filter(student => 
-          student.status === 'active'
-        ).length;
+        const estimatedAdmitted = Math.round(admittedInSample * totalStudents / sampleSize);
+        
+        // Active students = Total - Admitted (students who are registered but not yet admitted)
+        const activeStudents = Math.max(0, totalStudents - estimatedAdmitted);
 
         setStatistics({
           totalStudents,
-          admittedStudents,
-          pendingStudents,
-          activeStudents,
+          admittedStudents: estimatedAdmitted,
+          activeStudents, // This is now Total - Admitted
           loading: false
         });
       } else {
@@ -86,21 +98,13 @@ const StudentStatistics = () => {
       color: 'bg-purple-500',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600'
-    },
-    {
-      title: 'Pending Approval',
-      value: statistics.pendingStudents,
-      icon: Clock,
-      color: 'bg-orange-500',
-      bgColor: 'bg-orange-50',
-      textColor: 'text-orange-600'
     }
   ];
 
   if (statistics.loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        {[1, 2, 3].map((i) => (
           <div key={i} className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 animate-pulse">
             <div className="flex items-center justify-between">
               <div>
@@ -132,7 +136,7 @@ const StudentStatistics = () => {
         </Button>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {statCards.map((stat) => {
           const IconComponent = stat.icon;
           return (

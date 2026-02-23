@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AlertTriangle, TrendingDown, Users } from 'lucide-react';
 
 const NonProgressionStats = ({ currentData, selectedLevel, loading }) => {
   // Calculate non-progression statistics based on current view and level
-  const getNonProgressionData = () => {
+  const nonProgressionData = useMemo(() => {
     if (!currentData) {
       return null;
     }
@@ -60,9 +60,7 @@ const NonProgressionStats = ({ currentData, selectedLevel, loading }) => {
       },
       previous: totalPrevious
     };
-  };
-
-  const nonProgressionData = getNonProgressionData();
+  }, [currentData, selectedLevel]);
 
   // Don't show for Level 1 (no previous level to progress from)
   if (parseInt(selectedLevel) === 1) {
@@ -219,4 +217,4 @@ const NonProgressionStats = ({ currentData, selectedLevel, loading }) => {
   );
 };
 
-export default NonProgressionStats;
+export default React.memo(NonProgressionStats);

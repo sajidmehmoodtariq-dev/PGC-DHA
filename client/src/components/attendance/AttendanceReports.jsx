@@ -67,7 +67,7 @@ const AttendanceReports = ({ user }) => {
           endpoint = `/api/attendance/report/summary?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
           break;
         case 'teacher-punctuality':
-          endpoint = `/api/teacher-attendance/report/summary?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+          endpoint = `/teacher-attendance/report/summary?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
           break;
         case 'daily-breakdown':
           endpoint = `/api/attendance/report/daily?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
@@ -243,7 +243,12 @@ const AttendanceReports = ({ user }) => {
               {teacherBreakdown?.map((teacher, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="font-medium text-gray-900">{teacher.name}</p>
+                    <p className="font-medium text-gray-900">
+                      {teacher.fullName?.firstName && teacher.fullName?.lastName 
+                        ? `${teacher.fullName.firstName} ${teacher.fullName.lastName}`
+                        : teacher.name || teacher.userName || 'Unknown Teacher'
+                      }
+                    </p>
                     <p className="text-sm text-gray-600">{teacher.totalLectures} lectures</p>
                   </div>
                   <div className="text-right">

@@ -7,14 +7,15 @@ const { authenticate } = require('../middleware/auth');
 // Get all classes with teacher information
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { floor, campus, grade, program } = req.query;
+    const { floor, campus, grade, program, floorIncharge } = req.query;
     
-    // Build filter
+    // Build filter - only add defined values
     const filter = { isActive: true };
-    if (floor) filter.floor = parseInt(floor);
-    if (campus) filter.campus = campus;
-    if (grade) filter.grade = grade;
-    if (program) filter.program = program;
+    if (floor && floor !== 'undefined') filter.floor = parseInt(floor);
+    if (campus && campus !== 'undefined') filter.campus = campus;
+    if (grade && grade !== 'undefined') filter.grade = grade;
+    if (program && program !== 'undefined') filter.program = program;
+    if (floorIncharge && floorIncharge !== 'undefined') filter.floorIncharge = floorIncharge;
 
     const classes = await Class.find(filter)
       .populate('classIncharge', 'fullName userName email')
@@ -22,14 +23,26 @@ router.get('/', authenticate, async (req, res) => {
       .populate('teachers.teacherId', 'fullName userName email')
       .sort({ floor: 1, grade: 1, program: 1, name: 1 });
 
-    // Update student count for each class
+    // Update student count for each class and format floor display
     for (const classDoc of classes) {
       await classDoc.updateStudentCount();
     }
 
+    // Transform classes to include frontend-expected floor format
+    const transformedClasses = classes.map(cls => {
+      const classObj = cls.toObject();
+      return {
+        ...classObj,
+        className: cls.fullName, // Use the full descriptive name
+        // Keep the original floor number (1-4) as per the actual floor mapping
+        floor: cls.floor
+      };
+    });
+
     res.json({
       success: true,
-      classes
+      classes: transformedClasses,
+      data: transformedClasses // Also include 'data' field for compatibility
     });
 
   } catch (error) {
@@ -151,7 +164,7 @@ router.put('/:classId', authenticate, async (req, res) => {
     }
 
     const { classId } = req.params;
-    const { name, maxStudents, program } = req.body;
+    const { name, maxStudents, program, classIncharge, floorIncharge } = req.body;
 
     const classDoc = await Class.findById(classId);
     if (!classDoc) {
@@ -181,6 +194,8 @@ router.put('/:classId', authenticate, async (req, res) => {
     if (name !== undefined) updateData.name = name.trim();
     if (maxStudents !== undefined) updateData.maxStudents = maxStudents;
     if (program !== undefined) updateData.program = program;
+    if (classIncharge !== undefined) updateData.classIncharge = classIncharge || null;
+    if (floorIncharge !== undefined) updateData.floorIncharge = floorIncharge || null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ message: 'No valid update data provided' });
@@ -278,6 +293,51 @@ router.delete('/:classId/teachers/:teacherId', authenticate, async (req, res) =>
   } catch (error) {
     console.error('Error removing teacher from class:', error);
     res.status(500).json({ message: 'Error removing teacher from class', error: error.message });
+  }
+});
+
+// Delete an entire class
+router.delete('/:classId', authenticate, async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    // Find the class first to check if it exists
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Class not found' 
+      });
+    }
+
+    // Check if class has any students assigned
+    const studentsInClass = await User.countDocuments({ 
+      classId: classId, 
+      role: 'Student' 
+    });
+
+    if (studentsInClass > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot delete class. ${studentsInClass} students are currently assigned to this class. Please unassign students first.` 
+      });
+    }
+
+    // Delete the class
+    await Class.findByIdAndDelete(classId);
+
+    res.json({
+      success: true,
+      message: 'Class deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting class:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error deleting class', 
+      error: error.message 
+    });
   }
 });
 
@@ -420,6 +480,37 @@ router.get('/floor-incharge/:teacherId', authenticate, async (req, res) => {
   }
 });
 
+// Get floors for coordinator
+router.get('/coordinator-floors/:coordinatorId', authenticate, async (req, res) => {
+  try {
+    const { coordinatorId } = req.params;
+    
+    // Find floors where user is floorIncharge
+    const classes = await Class.find({
+      floorIncharge: coordinatorId,
+      isActive: true
+    });
+    
+    // Get unique floors
+    const floors = [...new Set(classes.map(cls => cls.floor))].sort();
+    
+    res.json({
+      success: true,
+      data: {
+        floors,
+        totalClasses: classes.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching coordinator floors:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching coordinator floors', 
+      error: error.message 
+    });
+  }
+});
+
 // Get classes by floors
 router.get('/floors/:floors', authenticate, async (req, res) => {
   try {
@@ -443,6 +534,58 @@ router.get('/floors/:floors', authenticate, async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Error fetching classes by floors', 
+      error: error.message 
+    });
+  }
+});
+
+// Get students for a specific class
+router.get('/:classId/students', authenticate, async (req, res) => {
+  try {
+    const { classId } = req.params;
+    
+    // Validate class exists
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Class not found' 
+      });
+    }
+    
+    // Get students for this class
+    const students = await User.find({
+      classId: classId,
+      role: 'Student',
+      isActive: true,
+      $or: [
+        { prospectusStage: 5 },
+        { enquiryLevel: 5 }
+      ]
+    })
+    .select('fullName userName rollNumber email program gender')
+    .sort({ 'fullName.firstName': 1, 'fullName.lastName': 1 });
+    
+    res.json({
+      success: true,
+      data: {
+        class: {
+          id: classDoc._id,
+          name: classDoc.name,
+          grade: classDoc.grade,
+          campus: classDoc.campus,
+          program: classDoc.program,
+          floor: classDoc.floor
+        },
+        students,
+        totalStudents: students.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching class students:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching class students', 
       error: error.message 
     });
   }

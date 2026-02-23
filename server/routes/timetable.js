@@ -232,7 +232,7 @@ router.post('/', authenticate, async (req, res) => {
       subject,
       lectureType: lectureType || 'Theory',
       academicYear: academicYear || undefined,
-      createdBy: req.user.id
+      createdBy: req.user._id
     };
 
     const newTimetable = new Timetable(timetableData);
@@ -241,9 +241,11 @@ router.post('/', authenticate, async (req, res) => {
     const conflicts = await newTimetable.hasTimeConflict();
     if (conflicts.length > 0) {
       const conflictDetails = conflicts.map(c => ({
-        type: c.teacherId.toString() === teacherId ? 'teacher' : 'class',
-        teacher: c.teacherId.fullName,
-        class: c.classId.name,
+        type: c.teacherId && c.teacherId.toString() === teacherId ? 'teacher' : 'class',
+        teacher: c.teacherId?.fullName?.firstName && c.teacherId?.fullName?.lastName 
+          ? `${c.teacherId.fullName.firstName} ${c.teacherId.fullName.lastName}` 
+          : 'Unknown Teacher',
+        class: c.classId?.name || 'Unknown Class',
         time: `${c.startTime} - ${c.endTime}`
       }));
 
@@ -254,6 +256,23 @@ router.post('/', authenticate, async (req, res) => {
     }
 
     await newTimetable.save();
+    
+    // Automatically add teacher to class teachers array if not already present
+    const existingTeacher = classDoc.teachers.find(t => 
+      t.teacherId.toString() === teacherId && 
+      (!t.subject || t.subject.toLowerCase() === subject.toLowerCase())
+    );
+    
+    if (!existingTeacher) {
+      classDoc.teachers.push({
+        teacherId: teacherId,
+        subject: subject,
+        isActive: true
+      });
+      await classDoc.save();
+      console.log(`Added teacher ${teacher.fullName?.firstName} ${teacher.fullName?.lastName} to class ${classDoc.name} for subject ${subject}`);
+    }
+    
     await newTimetable.populate('teacherId classId createdBy');
 
     res.status(201).json({
@@ -275,7 +294,7 @@ router.put('/:id', authenticate, async (req, res) => {
     const updateData = { ...req.body };
     
     // Add lastUpdatedBy
-    updateData.lastUpdatedBy = req.user.id;
+    updateData.lastUpdatedBy = req.user._id;
 
     const timetable = await Timetable.findById(id);
     if (!timetable) {
@@ -290,9 +309,11 @@ router.put('/:id', authenticate, async (req, res) => {
       const conflicts = await timetable.hasTimeConflict();
       if (conflicts.length > 0) {
         const conflictDetails = conflicts.map(c => ({
-          type: c.teacherId.toString() === timetable.teacherId.toString() ? 'teacher' : 'class',
-          teacher: c.teacherId.fullName || 'Unknown',
-          class: c.classId.name || 'Unknown',
+          type: c.teacherId && c.teacherId.toString() === timetable.teacherId.toString() ? 'teacher' : 'class',
+          teacher: c.teacherId?.fullName?.firstName && c.teacherId?.fullName?.lastName 
+            ? `${c.teacherId.fullName.firstName} ${c.teacherId.fullName.lastName}` 
+            : 'Unknown Teacher',
+          class: c.classId?.name || 'Unknown Class',
           time: `${c.startTime} - ${c.endTime}`
         }));
 
@@ -304,6 +325,29 @@ router.put('/:id', authenticate, async (req, res) => {
     }
 
     await timetable.save();
+    
+    // If teacher or subject changed, update class teachers array
+    if (updateData.teacherId || updateData.subject || updateData.classId) {
+      const classDoc = await Class.findById(timetable.classId);
+      if (classDoc) {
+        // Add new teacher-subject combination if not exists
+        const existingTeacher = classDoc.teachers.find(t => 
+          t.teacherId.toString() === timetable.teacherId.toString() && 
+          (!t.subject || t.subject.toLowerCase() === timetable.subject.toLowerCase())
+        );
+        
+        if (!existingTeacher) {
+          classDoc.teachers.push({
+            teacherId: timetable.teacherId,
+            subject: timetable.subject,
+            isActive: true
+          });
+          await classDoc.save();
+          console.log(`Added teacher to class ${classDoc.name} for subject ${timetable.subject} (via timetable update)`);
+        }
+      }
+    }
+    
     await timetable.populate('teacherId classId createdBy lastUpdatedBy');
 
     res.json({
@@ -330,8 +374,35 @@ router.delete('/:id', authenticate, async (req, res) => {
 
     // Soft delete - mark as inactive
     timetable.isActive = false;
-    timetable.lastUpdatedBy = req.user.id;
+    timetable.lastUpdatedBy = req.user._id;
     await timetable.save();
+    
+    // Check if teacher still has other active timetable entries for this class-subject combination
+    const otherTimetableEntries = await Timetable.find({
+      classId: timetable.classId,
+      teacherId: timetable.teacherId,
+      subject: timetable.subject,
+      isActive: true,
+      _id: { $ne: id } // Exclude the current entry
+    });
+    
+    // If no other active entries, consider removing teacher from class teachers array
+    if (otherTimetableEntries.length === 0) {
+      const classDoc = await Class.findById(timetable.classId);
+      if (classDoc) {
+        // Mark teacher as inactive for this subject instead of removing completely
+        const teacherIndex = classDoc.teachers.findIndex(t => 
+          t.teacherId.toString() === timetable.teacherId.toString() && 
+          (!t.subject || t.subject.toLowerCase() === timetable.subject.toLowerCase())
+        );
+        
+        if (teacherIndex !== -1) {
+          classDoc.teachers[teacherIndex].isActive = false;
+          await classDoc.save();
+          console.log(`Marked teacher as inactive in class ${classDoc.name} for subject ${timetable.subject} (no active timetable entries)`);
+        }
+      }
+    }
 
     res.json({
       success: true,
@@ -341,6 +412,48 @@ router.delete('/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error deleting timetable:', error);
     res.status(500).json({ message: 'Error deleting timetable', error: error.message });
+  }
+});
+
+// Bulk delete timetable entries for a class
+router.delete('/class/:classId', authenticate, async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    // Validate class exists
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      return res.status(404).json({ message: 'Class not found' });
+    }
+
+    // Find all timetable entries for this class
+    const timetableEntries = await Timetable.find({ classId, isActive: true });
+    
+    if (timetableEntries.length === 0) {
+      return res.status(404).json({ message: 'No active timetable entries found for this class' });
+    }
+
+    // Soft delete all entries for this class
+    const result = await Timetable.updateMany(
+      { classId, isActive: true },
+      { 
+        isActive: false, 
+        lastUpdatedBy: req.user._id 
+      }
+    );
+
+    console.log(`Soft deleted ${result.modifiedCount} timetable entries for class ${classDoc.name}`);
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${result.modifiedCount} timetable entries for class ${classDoc.name}`,
+      deletedCount: result.modifiedCount,
+      className: classDoc.name
+    });
+
+  } catch (error) {
+    console.error('Error bulk deleting class timetable:', error);
+    res.status(500).json({ message: 'Error deleting class timetable', error: error.message });
   }
 });
 
@@ -361,7 +474,7 @@ router.post('/bulk', authenticate, async (req, res) => {
 
     for (let i = 0; i < timetableEntries.length; i++) {
       try {
-        const entry = { ...timetableEntries[i], createdBy: req.user.id };
+        const entry = { ...timetableEntries[i], createdBy: req.user._id };
         const timetable = new Timetable(entry);
 
         // Check for conflicts
@@ -371,8 +484,10 @@ router.post('/bulk', authenticate, async (req, res) => {
             index: i,
             entry,
             conflicts: conflicts.map(c => ({
-              teacher: c.teacherId.fullName,
-              class: c.classId.name,
+              teacher: c.teacherId?.fullName?.firstName && c.teacherId?.fullName?.lastName 
+                ? `${c.teacherId.fullName.firstName} ${c.teacherId.fullName.lastName}` 
+                : 'Unknown Teacher',
+              class: c.classId?.name || 'Unknown Class',
               time: `${c.startTime} - ${c.endTime}`
             }))
           });
@@ -380,6 +495,25 @@ router.post('/bulk', authenticate, async (req, res) => {
         }
 
         await timetable.save();
+        
+        // Add teacher to class teachers array
+        const classDoc = await Class.findById(timetable.classId);
+        if (classDoc) {
+          const existingTeacher = classDoc.teachers.find(t => 
+            t.teacherId.toString() === timetable.teacherId.toString() && 
+            (!t.subject || t.subject.toLowerCase() === timetable.subject.toLowerCase())
+          );
+          
+          if (!existingTeacher) {
+            classDoc.teachers.push({
+              teacherId: timetable.teacherId,
+              subject: timetable.subject,
+              isActive: true
+            });
+            await classDoc.save();
+          }
+        }
+        
         await timetable.populate('teacherId classId');
         results.success.push(timetable);
 
@@ -424,11 +558,16 @@ router.get('/floors/:floors/date/:date', authenticate, async (req, res) => {
     const classIds = classes.map(cls => cls._id);
     
     // Get timetable entries for the date and classes
+    // Parse date correctly to avoid timezone issues
+    const [year, month, day] = date.split('-').map(Number);
+    const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+    
     const timetable = await Timetable.find({
       classId: { $in: classIds },
       weekDate: {
-        $gte: new Date(date),
-        $lt: new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000)
+        $gte: startDate,
+        $lte: endDate
       },
       isActive: true
     })
@@ -495,6 +634,129 @@ router.get('/floors/:floors/week/:weekDate', authenticate, async (req, res) => {
       message: 'Error fetching floors week timetable', 
       error: error.message 
     });
+  }
+});
+
+// Get teacher's lectures for a specific date
+router.get('/teacher/:teacherId/date/:date', authenticate, async (req, res) => {
+  try {
+    const { teacherId, date } = req.params;
+
+    // Validate teacher exists
+    const teacher = await User.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Teacher not found' 
+      });
+    }
+
+    if (teacher.role !== 'Teacher') {
+      return res.status(400).json({ 
+        success: false,
+        message: 'User is not a teacher' 
+      });
+    }
+
+    // Get day of week from date
+    const queryDate = new Date(date);
+    const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][queryDate.getDay()];
+
+    // Get teacher's timetable for that day
+    const lectures = await Timetable.find({
+      teacherId,
+      dayOfWeek,
+      isActive: true
+    })
+    .populate('classId', 'name grade campus program floor')
+    .sort({ startTime: 1 });
+
+    res.json({
+      success: true,
+      data: lectures,
+      teacher: {
+        id: teacher._id,
+        fullName: teacher.fullName,
+        userName: teacher.userName,
+        email: teacher.email
+      },
+      date,
+      dayOfWeek
+    });
+
+  } catch (error) {
+    console.error('Error fetching teacher lectures by date:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching teacher lectures', 
+      error: error.message 
+    });
+  }
+});
+
+// Utility endpoint to sync class teachers array with timetable data
+router.post('/sync-class-teachers', authenticate, async (req, res) => {
+  try {
+    // Only allow IT/Admin to run this sync
+    if (!['IT', 'InstituteAdmin'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied. Only IT/Admin can sync class teachers.' });
+    }
+    
+    let updated = 0;
+    let errors = [];
+    
+    // Get all active timetable entries
+    const timetableEntries = await Timetable.find({ isActive: true })
+      .populate('classId teacherId');
+    
+    // Group by class
+    const classTimetables = {};
+    timetableEntries.forEach(entry => {
+      const classId = entry.classId._id.toString();
+      if (!classTimetables[classId]) {
+        classTimetables[classId] = {
+          classDoc: entry.classId,
+          teachers: new Map()
+        };
+      }
+      
+      const teacherSubjectKey = `${entry.teacherId._id}_${entry.subject}`;
+      classTimetables[classId].teachers.set(teacherSubjectKey, {
+        teacherId: entry.teacherId._id,
+        subject: entry.subject,
+        isActive: true
+      });
+    });
+    
+    // Update each class
+    for (const classId in classTimetables) {
+      try {
+        const { classDoc, teachers } = classTimetables[classId];
+        
+        // Reset teachers array and rebuild from timetable
+        classDoc.teachers = Array.from(teachers.values());
+        await classDoc.save();
+        updated++;
+        
+      } catch (error) {
+        errors.push({
+          classId,
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Synced class teachers from timetable data`,
+      updated,
+      errors: errors.length,
+      details: errors
+    });
+    
+  } catch (error) {
+    console.error('Error syncing class teachers:', error);
+    res.status(500).json({ message: 'Error syncing class teachers', error: error.message });
   }
 });
 

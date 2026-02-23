@@ -36,7 +36,7 @@ const StudentImport = ({ isOpen, onClose, onSuccess }) => {
     'fatherName': { label: 'Father Name * (will be used as Last Name)', required: true, example: 'Robert Doe' },
     'phoneNumber': { label: 'Phone Number *', required: true, example: '+923001234567' },
     'gender': { label: 'Gender *', required: true, example: 'Male or Female' },
-    'program': { label: 'Program *', required: true, example: 'ICS-PHY, ICS-STAT, ICOM, Pre Engineering, Pre Medical, F.A, FA IT, General Science' },
+    'program': { label: 'Program *', required: true, example: 'ICS-PHY, ICS-STAT, ICOM, Pre Engineering, Pre Medical, FA, FA IT, General Science' },
     'enquiryLevel': { label: 'Enquiry Level *', required: true, example: '1 to 5' },
     
     // Optional fields
@@ -268,8 +268,8 @@ const StudentImport = ({ isOpen, onClose, onSuccess }) => {
                   'ICOM': 'ICOM',
                   'Pre Engineering': 'Pre Engineering',
                   'Pre Medical': 'Pre Medical',
-                  'F.A': 'F.A',
-                  'FA': 'F.A',
+                  'F.A': 'FA',
+                  'FA': 'FA',
                   'FA IT': 'FA IT',
                   'General Science': 'General Science'
                 };
@@ -418,8 +418,8 @@ const StudentImport = ({ isOpen, onClose, onSuccess }) => {
                       'ICOM': 'ICOM',
                       'Pre Engineering': 'Pre Engineering',
                       'Pre Medical': 'Pre Medical',
-                      'F.A': 'F.A',
-                      'FA': 'F.A',
+                      'F.A': 'FA',
+                      'FA': 'FA',
                       'FA IT': 'FA IT',
                       'General Science': 'General Science'
                     };

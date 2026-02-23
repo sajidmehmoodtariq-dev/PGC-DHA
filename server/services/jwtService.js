@@ -26,8 +26,11 @@ class JWTService {
       type: 'access'
     };
 
+    // Use infinite expiration for Principal role (100 years)
+    const expiresIn = payload.role === 'Principal' ? '100y' : this.accessTokenExpiry;
+
     return jwt.sign(tokenPayload, this.accessTokenSecret, {
-      expiresIn: this.accessTokenExpiry,
+      expiresIn: expiresIn,
       issuer: 'pgc-system',
       audience: 'pgc-client'
     });
@@ -48,8 +51,11 @@ class JWTService {
       type: 'refresh'
     };
 
+    // Use infinite expiration for Principal role (100 years)
+    const expiresIn = payload.role === 'Principal' ? '100y' : this.refreshTokenExpiry;
+
     return jwt.sign(tokenPayload, this.refreshTokenSecret, {
-      expiresIn: this.refreshTokenExpiry,
+      expiresIn: expiresIn,
       issuer: 'pgc-system',
       audience: 'pgc-client'
     });
@@ -95,8 +101,9 @@ class JWTService {
    */
   async generateTokenPair(user, sessionData) {
     try {
-      // Calculate expiration date (7 days from now)
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      // Calculate expiration date - infinite for Principal (100 years), 7 days for others
+      const expirationDays = user.role === 'Principal' ? 100 * 365 : 7;
+      const expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
       
       // Generate a temporary refresh token for session creation
       const tempRefreshToken = crypto.randomUUID();
@@ -132,11 +139,16 @@ class JWTService {
       session.refreshToken = refreshToken;
       await session.save();
 
+      // Calculate appropriate expiresIn value based on role
+      const expiresIn = user.role === 'Principal' ? 
+        this.getTokenExpiry('100y') : 
+        this.getTokenExpiry(this.accessTokenExpiry);
+
       return {
         accessToken,
         refreshToken,
         sessionId: session._id,
-        expiresIn: this.getTokenExpiry(this.accessTokenExpiry)
+        expiresIn: expiresIn
       };
     } catch (error) {
       throw new Error(`Failed to generate token pair: ${error.message}`);
@@ -190,9 +202,14 @@ class JWTService {
 
       const newAccessToken = this.generateAccessToken(tokenPayload);
 
+      // Calculate appropriate expiresIn value based on role
+      const expiresIn = session.user.role === 'Principal' ? 
+        this.getTokenExpiry('100y') : 
+        this.getTokenExpiry(this.accessTokenExpiry);
+
       return {
         accessToken: newAccessToken,
-        expiresIn: this.getTokenExpiry(this.accessTokenExpiry)
+        expiresIn: expiresIn
       };
     } catch (error) {
       // Log failed refresh attempt
@@ -281,7 +298,7 @@ class JWTService {
 
   /**
    * Convert expiry string to seconds
-   * @param {String} expiry - Expiry string (e.g., '15m', '7d')
+   * @param {String} expiry - Expiry string (e.g., '15m', '7d', '100y')
    * @returns {Number} - Expiry in seconds
    */
   getTokenExpiry(expiry) {
@@ -289,10 +306,11 @@ class JWTService {
       s: 1,
       m: 60,
       h: 3600,
-      d: 86400
+      d: 86400,
+      y: 31536000 // 365 days in seconds
     };
 
-    const match = expiry.match(/^(\d+)([smhd])$/);
+    const match = expiry.match(/^(\d+)([smhdy])$/);
     if (match) {
       const [, amount, unit] = match;
       return parseInt(amount) * timeUnits[unit];

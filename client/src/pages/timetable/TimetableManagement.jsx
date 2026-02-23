@@ -10,12 +10,15 @@ import { useAuth } from '../../hooks/useAuth';
 import { hasPermission, PERMISSIONS } from '../../utils/rolePermissions';
 import api from '../../services/api';
 import EnhancedTimetableForm from '../../components/timetable/EnhancedTimetableForm';
+import TimetableForm from '../../components/timetable/TimetableForm';
 import TimetableBlockView from '../../components/timetable/TimetableBlockView';
 import TimetableFilters from '../../components/timetable/TimetableFilters';
 
 const TimetableManagement = () => {
   const { user } = useAuth();
-  const { addToast } = useToast();
+  const toastContext = useToast();
+  const { addToast } = toastContext || {};
+  
   const [timetableData, setTimetableData] = useState([]);
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
@@ -108,7 +111,11 @@ const TimetableManagement = () => {
         status: error.response?.status,
         url: error.config?.url
       });
-      addToast({ type: 'error', message: `Failed to load timetable data: ${error.response?.data?.message || error.message}` });
+      
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: `Failed to load timetable data: ${error.response?.data?.message || error.message}` });
+      }
+      
       // Set default empty arrays on error
       setTimetableData([]);
       setClasses([]);
@@ -137,7 +144,9 @@ const TimetableManagement = () => {
       setTimetableData(response.data.timetable || []);
     } catch (error) {
       console.error('Error fetching filtered timetable:', error);
-      addToast({ type: 'error', message: 'Failed to load timetable data' });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: 'Failed to load timetable data' });
+      }
     }
   };
 
@@ -166,7 +175,9 @@ const TimetableManagement = () => {
       // Immediately remove from local state for instant UI update
       setTimetableData(prevData => prevData.filter(item => item._id !== timetableId));
       
-      addToast({ type: 'success', message: 'Timetable entry deleted successfully' });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'success', message: 'Timetable entry deleted successfully' });
+      }
       
       // Then refresh all data in background to ensure consistency
       await fetchInitialData();
@@ -174,19 +185,84 @@ const TimetableManagement = () => {
       console.log('Data refresh completed');
     } catch (error) {
       console.error('Error deleting timetable:', error);
-      addToast({ type: 'error', message: 'Failed to delete timetable entry' });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: 'Failed to delete timetable entry' });
+      }
     } finally {
       setIsDeleting(false); // Re-enable auto-refresh
     }
   };
 
+  const handleDeleteClass = async (classId, className) => {
+    if (!window.confirm(`Are you sure you want to delete ALL timetable entries for class "${className}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      
+      console.log(`Deleting all timetable entries for class ${className} (ID: ${classId})`);
+      
+      // Use the bulk delete endpoint
+      const response = await api.delete(`/timetable/class/${classId}`);
+      
+      // Remove all entries for this class from local state (defensive for null classId)
+      setTimetableData(prevData => prevData.filter(item => {
+        const id = item?.classId?._id || item?.classId; // handle populated or raw id
+        return String(id) !== String(classId) ? true : false;
+      }));
+      
+      if (typeof addToast === 'function') {
+        addToast({ 
+          type: 'success', 
+          message: response.data.message || `Successfully deleted all timetable entries for class ${className}` 
+        });
+      }
+      
+      // Refresh data to ensure consistency
+      await fetchInitialData();
+      
+    } catch (error) {
+      console.error('Error deleting class timetable:', error);
+      const errorMessage = error.response?.data?.message || `Failed to delete timetable for class ${className}`;
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: errorMessage });
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleFormSubmit = async (formData) => {
     try {
-      // Transform the formData to create individual timetable entries for each lecture
+      // Transform the formData to create/update individual timetable entries for each lecture
       const { classId, lectures } = formData;
-      
-      // Create separate API calls for each lecture
-      const timetablePromises = lectures.map(lecture => {
+
+      // Build an index of existing entries by day and start time to avoid conflicts (e.g., Monday duplicates)
+      const daysToUpdate = Array.from(new Set(lectures.map(l => l.dayOfWeek)));
+      const existingByDay = {};
+      const existingIndex = {};
+
+      for (const day of daysToUpdate) {
+        try {
+          const res = await api.get(`/timetable/class/${classId}?dayOfWeek=${encodeURIComponent(day)}`);
+          const existing = Array.isArray(res.data?.timetable) ? res.data.timetable : [];
+          existingByDay[day] = existing;
+          existing.forEach(item => {
+            const key = `${day}|${item.startTime}`;
+            if (!existingIndex[key]) existingIndex[key] = [];
+            existingIndex[key].push(item);
+          });
+        } catch (e) {
+          // If fetch fails, proceed with creation; conflicts will be handled by server
+          console.log(e);
+          
+          existingByDay[day] = [];
+        }
+      }
+
+      // For each lecture: if an entry exists at same day/startTime, update it; otherwise create
+      const results = await Promise.allSettled(lectures.map(async (lecture) => {
         const lectureData = {
           title: lecture.lectureName,
           classId,
@@ -199,32 +275,107 @@ const TimetableManagement = () => {
           duration: lecture.duration,
           academicYear: new Date().getFullYear() + '-' + (new Date().getFullYear() + 1)
         };
-        
+
+        const key = `${lecture.dayOfWeek}|${lecture.startTime}`;
+        const existing = existingIndex[key]?.[0];
+
+        if (existing && existing._id) {
+          // Update in place to avoid time conflict
+          return api.put(`/timetable/${existing._id}`, lectureData);
+        }
+        // Create new entry
         return api.post('/timetable', lectureData);
-      });
+      }));
+
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length > 0 && typeof addToast === 'function') {
+        addToast({ type: 'warning', message: `${failed.length} lecture(s) had conflicts or failed to save. Others were saved.` });
+      }
       
-      await Promise.all(timetablePromises);
-      addToast({ type: 'success', message: `Class timetable created successfully with ${lectures.length} lectures` });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'success', message: `Timetable saved. ${lectures.length - failed.length} saved, ${failed.length} failed.` });
+      } else {
+        console.log(`Timetable saved. ${lectures.length - failed.length} saved, ${failed.length} failed.`);
+      }
       
-      setShowForm(false);
-      setEditingTimetable(null);
-      // Refresh all data to ensure UI is updated
-      await fetchInitialData();
+      // Don't close the form or refresh data for day-wise saving
+      // The form will handle its own state management
+      
     } catch (error) {
       console.error('Error saving timetable:', error);
       const message = error.response?.data?.message || 'Failed to save timetable';
-      addToast({ type: 'error', message });
       
-      // If there are conflicts, show them
-      if (error.response?.data?.conflicts) {
-        const conflicts = error.response.data.conflicts;
-        const conflictMessages = conflicts.map(c => 
-          `${c.type === 'teacher' ? 'Teacher' : 'Class'} conflict: ${c.teacher || c.class} at ${c.time}`
-        );
-        addToast({ 
-          type: 'error', 
-          message: `Conflicts detected: ${conflictMessages.join(', ')}` 
-        });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message });
+        
+        // If there are conflicts, show them
+        if (error.response?.data?.conflicts) {
+          const conflicts = error.response.data.conflicts;
+          const conflictMessages = conflicts.map(c => 
+            `${c.type === 'teacher' ? 'Teacher' : 'Class'} conflict: ${c.teacher || c.class} at ${c.time}`
+          );
+          addToast({ 
+            type: 'error', 
+            message: `Conflicts detected: ${conflictMessages.join(', ')}` 
+          });
+        }
+      } else {
+        console.error('addToast function not available:', message);
+        alert(message); // Fallback to alert
+      }
+    }
+  };
+
+  const handleIndividualEntrySubmit = async (formData) => {
+    try {
+      const lectureData = {
+        title: formData.title,
+        classId: formData.classId,
+        dayOfWeek: formData.dayOfWeek,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        teacherId: formData.teacherId,
+        subject: formData.subject,
+        lectureType: formData.lectureType,
+        academicYear: formData.academicYear
+      };
+
+      if (editingTimetable && editingTimetable._id) {
+        // Update existing entry
+        await api.put(`/timetable/${editingTimetable._id}`, lectureData);
+        if (typeof addToast === 'function') {
+          addToast({ type: 'success', message: 'Timetable entry updated successfully' });
+        }
+      } else {
+        // Create new entry
+        await api.post('/timetable', lectureData);
+        if (typeof addToast === 'function') {
+          addToast({ type: 'success', message: 'Timetable entry created successfully' });
+        }
+      }
+      
+      setShowForm(false);
+      setEditingTimetable(null);
+      // Refresh data
+      await fetchInitialData();
+    } catch (error) {
+      console.error('Error saving timetable entry:', error);
+      const message = error.response?.data?.message || 'Failed to save timetable entry';
+      
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message });
+        
+        // If there are conflicts, show them
+        if (error.response?.data?.conflicts) {
+          const conflicts = error.response.data.conflicts;
+          const conflictMessages = conflicts.map(c => 
+            `${c.type === 'teacher' ? 'Teacher' : 'Class'} conflict: ${c.teacher || c.class} at ${c.time}`
+          );
+          addToast({ 
+            type: 'error', 
+            message: `Conflicts detected: ${conflictMessages.join(', ')}` 
+          });
+        }
       }
     }
   };
@@ -294,10 +445,14 @@ const TimetableManagement = () => {
       link.click();
       document.body.removeChild(link);
       
-      addToast({ type: 'success', message: 'Timetable exported successfully as CSV! You can open it in Excel.' });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'success', message: 'Timetable exported successfully as CSV! You can open it in Excel.' });
+      }
     } catch (error) {
       console.error('Error exporting timetable:', error);
-      addToast({ type: 'error', message: 'Failed to export timetable' });
+      if (typeof addToast === 'function') {
+        addToast({ type: 'error', message: 'Failed to export timetable' });
+      }
     }
   };
 
@@ -561,11 +716,12 @@ const TimetableManagement = () => {
           canManage={canManage}
           onEdit={handleEditTimetable}
           onDelete={handleDeleteTimetable}
+          onDeleteClass={handleDeleteClass}
         />
       )}
 
       {/* Timetable Form Modal */}
-      {showForm && (
+      {showForm && !editingTimetable && (
         <EnhancedTimetableForm
           classes={classes}
           teachers={teachers}
@@ -575,6 +731,20 @@ const TimetableManagement = () => {
             setEditingTimetable(null);
           }}
           editingTimetable={editingTimetable}
+        />
+      )}
+
+      {/* Individual Entry Edit Form */}
+      {showForm && editingTimetable && (
+        <TimetableForm
+          timetable={editingTimetable}
+          classes={classes}
+          teachers={teachers}
+          onSubmit={handleIndividualEntrySubmit}
+          onClose={() => {
+            setShowForm(false);
+            setEditingTimetable(null);
+          }}
         />
       )}
     </div>

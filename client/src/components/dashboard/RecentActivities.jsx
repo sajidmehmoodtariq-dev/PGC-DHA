@@ -118,4 +118,4 @@ const RecentActivities = ({ dashboardData, loading }) => {
   );
 };
 
-export default RecentActivities;
+export default React.memo(RecentActivities);

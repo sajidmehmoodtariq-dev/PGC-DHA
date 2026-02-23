@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { UserCheck, MessageSquare, Mail, ClipboardList } from 'lucide-react';
 
 /**
@@ -6,6 +6,49 @@ import { UserCheck, MessageSquare, Mail, ClipboardList } from 'lucide-react';
  * Shows key metrics and insights for the dashboard
  */
 const QuickInsights = ({ dashboardData, loading }) => {
+  const insights = useMemo(() => [
+    {
+      title: 'High Attendance Rate',
+      description: '89% students present today',
+      icon: UserCheck,
+      gradient: 'from-green-50 to-green-100',
+      border: 'border-green-200',
+      textColor: 'text-green-800',
+      descColor: 'text-green-600',
+      iconColor: 'text-green-600'
+    },
+    {
+      title: 'Active Enquiries',
+      description: `${dashboardData?.todayEnquiries || 12} new enquiries today`,
+      icon: MessageSquare,
+      gradient: 'from-blue-50 to-blue-100',
+      border: 'border-blue-200',
+      textColor: 'text-blue-800',
+      descColor: 'text-blue-600',
+      iconColor: 'text-blue-600'
+    },
+    {
+      title: 'Pending Tasks',
+      description: `${dashboardData?.pendingCorrespondence || 8} correspondence items`,
+      icon: Mail,
+      gradient: 'from-amber-50 to-amber-100',
+      border: 'border-amber-200',
+      textColor: 'text-amber-800',
+      descColor: 'text-amber-600',
+      iconColor: 'text-amber-600'
+    },
+    {
+      title: 'Upcoming Exams',
+      description: '3 exams this week',
+      icon: ClipboardList,
+      gradient: 'from-purple-50 to-purple-100',
+      border: 'border-purple-200',
+      textColor: 'text-purple-800',
+      descColor: 'text-purple-600',
+      iconColor: 'text-purple-600'
+    }
+  ], [dashboardData]);
+
   if (loading) {
     return (
       <div className="bg-white/60 backdrop-blur-xl rounded-2xl shadow-xl border border-border/50 p-6">
@@ -24,49 +67,6 @@ const QuickInsights = ({ dashboardData, loading }) => {
       </div>
     );
   }
-
-  const insights = [
-    {
-      title: 'High Attendance Rate',
-      description: '89% students present today',
-      icon: UserCheck,
-      gradient: 'from-green-50 to-green-100',
-      border: 'border-green-200',
-      textColor: 'text-green-800',
-      descColor: 'text-green-600',
-      iconColor: 'text-green-600'
-    },
-    {
-      title: 'Active Enquiries',
-      description: `${dashboardData.todayEnquiries || 12} new enquiries today`,
-      icon: MessageSquare,
-      gradient: 'from-blue-50 to-blue-100',
-      border: 'border-blue-200',
-      textColor: 'text-blue-800',
-      descColor: 'text-blue-600',
-      iconColor: 'text-blue-600'
-    },
-    {
-      title: 'Pending Tasks',
-      description: `${dashboardData.pendingCorrespondence || 8} correspondence items`,
-      icon: Mail,
-      gradient: 'from-amber-50 to-amber-100',
-      border: 'border-amber-200',
-      textColor: 'text-amber-800',
-      descColor: 'text-amber-600',
-      iconColor: 'text-amber-600'
-    },
-    {
-      title: 'Upcoming Exams',
-      description: '3 exams this week',
-      icon: ClipboardList,
-      gradient: 'from-purple-50 to-purple-100',
-      border: 'border-purple-200',
-      textColor: 'text-purple-800',
-      descColor: 'text-purple-600',
-      iconColor: 'text-purple-600'
-    }
-  ];
 
   return (
     <div className="bg-white/60 backdrop-blur-xl rounded-2xl shadow-xl border border-border/50 p-6 transition-all duration-300 hover:shadow-2xl hover:bg-white/70" style={{boxShadow: '0 12px 48px 0 rgba(26,35,126,0.12)'}}>
@@ -94,4 +94,4 @@ const QuickInsights = ({ dashboardData, loading }) => {
   );
 };
 
-export default QuickInsights;
+export default React.memo(QuickInsights);

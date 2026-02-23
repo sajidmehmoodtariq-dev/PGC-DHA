@@ -73,11 +73,12 @@ export const DASHBOARD_CARDS = {
     {
       id: 'examinations',
       title: 'Examination Reports',
-      href: '/reports?section=examinations',
+      href: '/analytics?view=examinations',
       icon: 'ClipboardList',
       bgGradient: 'from-orange-500 to-orange-600',
       type: 'normal',
-      permission: PERMISSIONS.REPORTS.VIEW_EXAMINATION_REPORTS
+      recentActivity: null,
+      todayCount: null
     },
     {
       id: 'appointments',
@@ -114,6 +115,17 @@ export const DASHBOARD_CARDS = {
       bgGradient: 'from-amber-500 to-amber-600',
       type: 'normal',
       permission: PERMISSIONS.TIMETABLE.VIEW_TIMETABLE
+    },
+    {
+      id: 'examination-management',
+      title: 'Examination Management',
+      href: '/examinations',
+      icon: 'GraduationCap',
+      bgGradient: 'from-indigo-500 to-indigo-600',
+      type: 'normal',
+      permission: PERMISSIONS.EXAMINATION.MANAGE_ACADEMIC_RECORDS,
+      recentActivity: null,
+      todayCount: null
     }
   ],
 
@@ -131,29 +143,59 @@ export const DASHBOARD_CARDS = {
     {
       id: 'student-statistics',
       title: 'Student Analytics',
-      href: '/reports?section=students',
+      href: '/analytics?view=students',
       icon: 'Users',
       bgGradient: 'from-green-500 to-green-600',
       type: 'normal',
-      permission: PERMISSIONS.REPORTS.VIEW_STUDENT_REPORTS
+      recentActivity: null,
+      todayCount: null
     },
     {
-      id: 'attendance-analytics',
-      title: 'Attendance Analytics',
-      href: '/reports?section=attendance',
-      icon: 'TrendingUp',
+      id: 'attendance-reports',
+      title: 'Attendance Reports',
+      href: '/principal/attendance-reports',
+      icon: 'UserCheck',
       bgGradient: 'from-purple-500 to-purple-600',
       type: 'normal',
       permission: PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS
     },
     {
-      id: 'academic-performance',
-      title: 'Academic Performance',
-      href: '/reports?section=examinations',
-      icon: 'Award',
-      bgGradient: 'from-orange-500 to-orange-600',
+      id: 'principal-timetable',
+      title: 'Timetable Overview',
+      href: '/principal/timetable',
+      icon: 'Calendar',
+      bgGradient: 'from-blue-500 to-blue-600',
+      type: 'normal'
+    },
+    {
+      id: 'examination-analytics',
+      title: 'Examination Analytics',
+      href: '/analytics?view=examinations',
+      icon: 'GraduationCap',
+      bgGradient: 'from-indigo-500 to-indigo-600',
       type: 'normal',
-      permission: PERMISSIONS.REPORTS.VIEW_EXAMINATION_REPORTS
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'performance-analytics',
+      title: 'Performance Analytics',
+      href: '/analytics',
+      icon: 'TrendingUp',
+      bgGradient: 'from-purple-500 to-purple-600',
+      type: 'normal',
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'zone-analytics',
+      title: 'Zone-Based Analytics',
+      href: '/analytics?tab=zones',
+      icon: 'BarChart3',
+      bgGradient: 'from-emerald-500 to-emerald-600',
+      type: 'normal',
+      recentActivity: null,
+      todayCount: null
     },
     {
       id: 'institutional-reports',
@@ -241,6 +283,38 @@ export const DASHBOARD_CARDS = {
       bgGradient: 'from-amber-500 to-amber-600',
       type: 'normal',
       permission: PERMISSIONS.TIMETABLE.VIEW_TIMETABLE
+    },
+    {
+      id: 'examination-management',
+      title: 'Test Management',
+      href: '/examinations',
+      icon: 'GraduationCap',
+      bgGradient: 'from-indigo-500 to-indigo-600',
+      type: 'normal',
+      permission: PERMISSIONS.EXAMINATION.CREATE_TEST,
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'academic-records-management',
+      title: 'Academic Records',
+      href: '/examinations?tab=academic-records',
+      icon: 'BookOpen',
+      bgGradient: 'from-red-500 to-red-600',
+      type: 'normal',
+      permission: PERMISSIONS.EXAMINATION.MANAGE_ACADEMIC_RECORDS,
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'system-analytics',
+      title: 'System Analytics',
+      href: '/analytics',
+      icon: 'Activity',
+      bgGradient: 'from-orange-500 to-orange-600',
+      type: 'normal',
+      recentActivity: null,
+      todayCount: null
     }
   ],
 
@@ -256,49 +330,44 @@ export const DASHBOARD_CARDS = {
       permission: null // Teachers access based on class/floor assignments
     },
     {
-      id: 'class-management',
-      title: 'Class Management',
-      href: '/classes',
-      icon: 'School',
-      bgGradient: 'from-teal-500 to-teal-600',
-      type: 'normal',
-      permission: PERMISSIONS.CLASS_MANAGEMENT.VIEW_CLASSES
-    },
-    {
-      id: 'student-assignment',
-      title: 'Student Assignment',
-      href: '/classes/assign-students',
-      icon: 'UserPlus',
-      bgGradient: 'from-orange-500 to-orange-600',
-      type: 'normal',
-      permission: PERMISSIONS.CLASS_MANAGEMENT.BULK_ASSIGN_STUDENTS
-    },
-    {
-      id: 'my-classes',
-      title: 'My Classes',
-      href: '/teacher/classes',
-      icon: 'BookOpen',
-      bgGradient: 'from-blue-500 to-blue-600',
-      type: 'normal',
-      permission: null
-    },
-    {
       id: 'my-timetable',
       title: 'My Schedule',
-      href: '/teacher/schedule',
+      href: '/timetable/view',
       icon: 'Calendar',
       bgGradient: 'from-green-500 to-green-600',
       type: 'normal',
       permission: null
     },
     {
-      id: 'timetable-view',
-      title: 'View Timetables',
-      href: '/timetable/view',
-      icon: 'CalendarDays',
-      bgGradient: 'from-amber-500 to-amber-600',
+      id: 'my-tests',
+      title: 'My Tests & Marks Entry',
+      href: '/examinations?view=teacher',
+      icon: 'ClipboardCheck',
+      bgGradient: 'from-indigo-500 to-indigo-600',
       type: 'normal',
-      permission: PERMISSIONS.TIMETABLE.VIEW_TIMETABLE
+      permission: PERMISSIONS.EXAMINATION.ENTER_MARKS,
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'class-analytics',
+      title: 'Class Analytics',
+      href: '/analytics?view=class',
+      icon: 'BarChart3',
+      bgGradient: 'from-cyan-500 to-cyan-600',
+      type: 'normal',
+      recentActivity: null,
+      todayCount: null
+    },
+    {
+      id: 'student-examination-report',
+      title: 'Student Examination Report',
+      href: '/teacher/student-examination-report',
+      icon: 'FileText',
+      bgGradient: 'from-rose-500 to-rose-600',
+      type: 'normal',
+      permission: null, // Teachers can view only for subjects they teach
+      description: 'View examination performance of students for subjects you teach'
     }
   ],
 
@@ -333,16 +402,16 @@ export const DASHBOARD_CARDS = {
     }
   ],
 
-  // Coordinator/Floor Head - Student supervision + Limited enquiry management
+  // Coordinator/Floor Head - Teacher supervision + Limited enquiry management (No student management access)
   'Coordinator': [
     {
-      id: 'student-management',
-      title: 'Student Management',
-      href: '/students',
-      icon: 'Users',
-      bgGradient: 'from-teal-500 to-teal-600',
+      id: 'teacher-attendance',
+      title: 'Teacher Attendance',
+      href: '/coordinator/teacher-attendance',
+      icon: 'UserCheck2',
+      bgGradient: 'from-green-500 to-green-600',
       type: 'normal',
-      permission: PERMISSIONS.USER_MANAGEMENT.VIEW_USERS
+      permission: null
     },
     {
       id: 'student-attendance',
@@ -354,15 +423,6 @@ export const DASHBOARD_CARDS = {
       permission: PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS
     },
     {
-      id: 'student-reports',
-      title: 'Student Reports',
-      href: '/reports?section=students',
-      icon: 'FileText',
-      bgGradient: 'from-green-500 to-green-600',
-      type: 'normal',
-      permission: PERMISSIONS.REPORTS.VIEW_STUDENT_REPORTS
-    },
-    {
       id: 'enquiry-management',
       title: 'Enquiry Management',
       href: '/institute-admin/enquiries',
@@ -372,22 +432,14 @@ export const DASHBOARD_CARDS = {
       permission: PERMISSIONS.ENQUIRY_MANAGEMENT.VIEW_ENQUIRIES
     },
     {
-      id: 'class-management',
-      title: 'Class Management',
-      href: '/classes',
-      icon: 'School',
-      bgGradient: 'from-indigo-500 to-indigo-600',
+      id: 'campus-analytics',
+      title: 'Campus Analytics',
+      href: '/analytics?view=campus',
+      icon: 'Building',
+      bgGradient: 'from-violet-500 to-violet-600',
       type: 'normal',
-      permission: PERMISSIONS.CLASS_MANAGEMENT.VIEW_CLASSES
-    },
-    {
-      id: 'student-assignment',
-      title: 'Student Assignment',
-      href: '/classes/assign-students',
-      icon: 'UserPlus',
-      bgGradient: 'from-rose-500 to-rose-600',
-      type: 'normal',
-      permission: PERMISSIONS.CLASS_MANAGEMENT.BULK_ASSIGN_STUDENTS
+      recentActivity: null,
+      todayCount: null
     }
   ]
 };
@@ -488,6 +540,20 @@ export const QUICK_MANAGEMENT_ACCESS = {
       icon: 'Calendar',
       description: 'Manage timetables and schedules',
       permission: PERMISSIONS.TIMETABLE.VIEW_TIMETABLE
+    },
+    {
+      title: 'Test Management',
+      href: '/examinations',
+      icon: 'GraduationCap',
+      description: 'Create and manage tests',
+      permission: PERMISSIONS.EXAMINATION.CREATE_TEST
+    },
+    {
+      title: 'Academic Records',
+      href: '/examinations?tab=academic-records',
+      icon: 'BookOpen',
+      description: 'Manage student matriculation marks and academic records',
+      permission: PERMISSIONS.EXAMINATION.MANAGE_ACADEMIC_RECORDS
     }
   ],
 
@@ -500,8 +566,53 @@ export const QUICK_MANAGEMENT_ACCESS = {
       permission: null
     },
     {
+      title: 'Attendance Reports',
+      href: '/principal/attendance-reports',
+      icon: 'TrendingUp',
+      description: 'View teacher attendance reports and analytics',
+      permission: PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS
+    },
+    {
+      title: 'Timetable Overview',
+      href: '/principal/timetable',
+      icon: 'Calendar',
+      description: 'View real-time timetable with teacher attendance status',
+      permission: null
+    },
+    {
       title: 'Correspondence Management',
-      href: '/principal/correspondence',
+      href: '/correspondence',
+      icon: 'Mail',
+      description: 'Manage student correspondence and communications',
+      permission: null
+    }
+  ],
+
+  'Teacher': [
+    {
+      title: 'Student Attendance',
+      href: '/attendance',
+      icon: 'UserCheck',
+      description: 'Mark and manage student attendance for your classes',
+      permission: PERMISSIONS.ATTENDANCE.MARK_STUDENT_ATTENDANCE
+    },
+    {
+      title: 'My Schedule',
+      href: '/timetable/view',
+      icon: 'Calendar',
+      description: 'View your teaching schedule and timetable',
+      permission: null
+    },
+    {
+      title: 'My Tests & Marks',
+      href: '/examinations?view=teacher',
+      icon: 'ClipboardCheck',
+      description: 'Manage test marks and examination records',
+      permission: PERMISSIONS.EXAMINATION.ENTER_MARKS
+    },
+    {
+      title: 'Correspondence',
+      href: '/correspondence',
       icon: 'Mail',
       description: 'Manage student correspondence and communications',
       permission: null
@@ -527,18 +638,18 @@ export const QUICK_MANAGEMENT_ACCESS = {
 
   'Coordinator': [
     {
-      title: 'Student Management',
-      href: '/students',
-      icon: 'Users',
-      description: 'Supervise and manage student information',
-      permission: PERMISSIONS.USER_MANAGEMENT.VIEW_USERS
+      title: 'Teacher Attendance',
+      href: '/coordinator/teacher-attendance',
+      icon: 'UserCheck2',
+      description: 'Mark teacher attendance and add remarks',
+      permission: null
     },
     {
       title: 'Student Attendance',
-      href: '/reports?section=student-attendance',
+      href: '/attendance',
       icon: 'UserCheck',
-      description: 'Monitor student attendance and punctuality',
-      permission: PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS
+      description: 'Mark and manage student attendance',
+      permission: PERMISSIONS.ATTENDANCE.MARK_STUDENT_ATTENDANCE
     },
     {
       title: 'Enquiry Support',

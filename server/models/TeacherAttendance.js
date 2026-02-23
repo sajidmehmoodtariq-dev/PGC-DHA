@@ -83,6 +83,13 @@ const TeacherAttendanceSchema = new mongoose.Schema({
     trim: true
   },
   
+  // Coordinator remarks (separate from general remarks)
+  coordinatorRemarks: {
+    type: String,
+    maxlength: 500,
+    trim: true
+  },
+  
   // Who marked the attendance (Floor Coordinator)
   markedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -96,6 +103,26 @@ const TeacherAttendanceSchema = new mongoose.Schema({
     required: true,
     min: 1,
     max: 4
+  },
+  
+  // Track if notification action has been taken
+  notificationActionTaken: {
+    type: Boolean,
+    default: false
+  },
+  
+  // Details of the notification action taken
+  notificationAction: {
+    action: {
+      type: String,
+      enum: ['contact_coordinator', 'escalate', 'mark_resolved']
+    },
+    takenBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    takenAt: Date,
+    notes: String
   },
   
   // Timestamps

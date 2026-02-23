@@ -5,7 +5,8 @@ import {
   UserX,
   BookOpen,
   ClipboardList,
-  Calendar
+  Calendar,
+  BarChart3
 } from 'lucide-react';
 
 const ReportsNavigation = ({ config, activeSection, onSectionChange }) => {
@@ -13,6 +14,7 @@ const ReportsNavigation = ({ config, activeSection, onSectionChange }) => {
     { id: 'enquiries', name: 'Enquiry Reports', icon: MessageSquare, color: 'from-blue-500 to-blue-600' },
     { id: 'student-attendance', name: 'Student Attendance Reports', icon: UserX, color: 'from-red-500 to-red-600' },
     { id: 'lecture-attendance', name: 'Lecture Attendance Reports', icon: BookOpen, color: 'from-orange-500 to-orange-600' },
+    { id: 'attendance-reports', name: 'Attendance Reports', icon: BarChart3, color: 'from-indigo-500 to-indigo-600' },
     { id: 'examinations', name: 'Examination Reports', icon: ClipboardList, color: 'from-purple-500 to-purple-600' },
     { id: 'appointments', name: 'Appointment Reports', icon: Calendar, color: 'from-amber-500 to-amber-600' }
   ];

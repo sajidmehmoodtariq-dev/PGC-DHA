@@ -36,19 +36,7 @@ const ClassTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTimet
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const lectureTypes = ['Theory', 'Practical', 'Lab', 'Tutorial'];
 
-  // Generate time slots (8:00 AM to 6:00 PM in 30-minute intervals)
-  const generateTimeSlots = () => {
-    const slots = [];
-    for (let hour = 8; hour <= 18; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        slots.push(time);
-      }
-    }
-    return slots;
-  };
-
-  const timeSlots = generateTimeSlots();
+  // Use native time inputs to allow minute-level precision
 
   // Calculate end time based on start time and duration
   const calculateEndTime = (startTime, duration) => {
@@ -362,21 +350,12 @@ const ClassTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTimet
                       {/* Start Time */}
                       <div className="space-y-2">
                         <Label>Start Time *</Label>
-                        <Select 
-                          value={lecture.startTime} 
-                          onValueChange={(value) => handleLectureChange(index, 'startTime', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select time" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {timeSlots.map(time => (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Input
+                          type="time"
+                          step="60"
+                          value={lecture.startTime}
+                          onChange={(e) => handleLectureChange(index, 'startTime', e.target.value)}
+                        />
                         {errors[`lecture_${index}_startTime`] && (
                           <p className="text-sm text-red-500">{errors[`lecture_${index}_startTime`]}</p>
                         )}

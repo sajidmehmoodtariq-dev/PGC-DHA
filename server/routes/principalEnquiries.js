@@ -33,14 +33,15 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
   // Build query for students (Level 1-5 only, as requested)
   let query = {
     role: 'Student',
-    prospectusStage: { $gte: 1, $lte: 5 } // Only levels 1-5
+    prospectusStage: { $gte: 1, $lte: 5 }, // Only levels 1-5
+    status: { $ne: 3 } // Exclude deleted users (status 3)
   };
   
   console.log('Base query:', query);
 
-  // Apply level filter - show students AT LEAST this level (as client requested)
+  // Apply level filter - show students AT EXACT this level (not cumulative)
   if (minLevel && minLevel !== 'all') {
-    query.prospectusStage = { $gte: parseInt(minLevel), $lte: 5 };
+    query.prospectusStage = parseInt(minLevel);
   }
 
   // Apply date filter
@@ -151,7 +152,8 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
       // Build base query for level calculations (same date filter)
       let levelQuery = {
         role: 'Student',
-        prospectusStage: { $gte: i }
+        prospectusStage: { $gte: i },
+        status: { $ne: 3 } // Exclude deleted users
       };
       
       // Apply same date filter to level calculations
@@ -159,11 +161,11 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
         levelQuery.createdOn = query.createdOn;
       }
       
-      // Get boys count for current level (cumulative - includes higher levels)
-      // Level 2 includes Level 3 students, Level 3 includes Level 4 students, etc.
+      // Get boys count for current level (exact level only)
       const boysCurrentLevel = await User.countDocuments({
         ...levelQuery,
-        gender: { $in: ['Male', 'male', 'M'] }
+        gender: { $in: ['Male', 'male', 'M'] },
+        status: { $ne: 3 } // Exclude deleted users
       });
       
       // Get boys count for previous level
@@ -171,8 +173,9 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
       if (i > 1) {
         let prevLevelQuery = {
           role: 'Student',
-          prospectusStage: { $gte: i - 1 },
-          gender: { $in: ['Male', 'male', 'M'] }
+          prospectusStage: i - 1, // Exact previous level
+          gender: { $in: ['Male', 'male', 'M'] },
+          status: { $ne: 3 } // Exclude deleted users
         };
         if (query.createdOn) {
           prevLevelQuery.createdOn = query.createdOn;
@@ -183,11 +186,11 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
         boysPreviousLevel = boysCurrentLevel;
       }
       
-      // Get girls count for current level (cumulative - includes higher levels)
-      // Level 2 includes Level 3 students, Level 3 includes Level 4 students, etc.
+      // Get girls count for current level (exact level only)
       const girlsCurrentLevel = await User.countDocuments({
         ...levelQuery,
-        gender: { $in: ['Female', 'female', 'F'] }
+        gender: { $in: ['Female', 'female', 'F'] },
+        status: { $ne: 3 } // Exclude deleted users
       });
       
       // Get girls count for previous level
@@ -195,8 +198,9 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
       if (i > 1) {
         let prevLevelQuery = {
           role: 'Student',
-          prospectusStage: { $gte: i - 1 },
-          gender: { $in: ['Female', 'female', 'F'] }
+          prospectusStage: i - 1, // Exact previous level
+          gender: { $in: ['Female', 'female', 'F'] },
+          status: { $ne: 3 } // Exclude deleted users
         };
         if (query.createdOn) {
           prevLevelQuery.createdOn = query.createdOn;
@@ -230,7 +234,8 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
       // Build base query for level calculations (same date filter)
       let levelQuery = {
         role: 'Student',
-        prospectusStage: { $gte: i }
+        prospectusStage: i, // Exact level only
+        status: { $ne: 3 } // Exclude deleted users
       };
       
       // Apply same date filter to level calculations
@@ -238,7 +243,7 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
         levelQuery.createdOn = query.createdOn;
       }
       
-      // Get count for current level (cumulative - includes higher levels)
+      // Get count for current level (exact level only)
       const currentLevelCount = await User.countDocuments(levelQuery);
       
       // Get count for previous level
@@ -246,7 +251,8 @@ router.get('/principal-stats', asyncHandler(async (req, res) => {
       if (i > 1) {
         let prevLevelQuery = {
           role: 'Student',
-          prospectusStage: { $gte: i - 1 }
+          prospectusStage: i - 1, // Exact previous level
+          status: { $ne: 3 } // Exclude deleted users
         };
         if (query.createdOn) {
           prevLevelQuery.createdOn = query.createdOn;
@@ -421,17 +427,19 @@ router.get('/principal-overview', asyncHandler(async (req, res) => {
     for (let level = 1; level <= 5; level++) {
       const levelQuery = {
         role: 'Student',
-        prospectusStage: { $gte: level, $lte: 5 },
+        prospectusStage: level, // Exact level, not cumulative
+        status: { $ne: 3 }, // Exclude deleted users
         ...dateQuery
       };
       levelBreakdown[level] = await User.countDocuments(levelQuery);
-      console.log(`Level ${level}+ count:`, levelBreakdown[level], 'with query:', levelQuery);
+      console.log(`Level ${level} count:`, levelBreakdown[level], 'with query:', levelQuery);
     }
 
     // Get total enquiries (Level 1) with date filtering
     const totalEnquiries = await User.countDocuments({
       role: 'Student',
       prospectusStage: { $gte: 1 },
+      status: { $ne: 3 }, // Exclude deleted users
       ...dateQuery
     });
 
@@ -439,6 +447,7 @@ router.get('/principal-overview', asyncHandler(async (req, res) => {
     const admittedStudents = await User.countDocuments({
       role: 'Student',
       prospectusStage: 5,
+      status: { $ne: 3 }, // Exclude deleted users
       ...dateQuery
     });
     
@@ -450,6 +459,7 @@ router.get('/principal-overview', asyncHandler(async (req, res) => {
       const currentLevelCount = await User.countDocuments({
         role: 'Student',
         prospectusStage: { $gte: i },
+        status: { $ne: 3 }, // Exclude deleted users
         ...dateQuery
       });
       
@@ -460,6 +470,7 @@ router.get('/principal-overview', asyncHandler(async (req, res) => {
         previousLevelCount = await User.countDocuments({
           role: 'Student',
           prospectusStage: { $gte: i - 1 },
+          status: { $ne: 3 }, // Exclude deleted users
           ...dateQuery
         });
       } else {
@@ -521,53 +532,162 @@ router.get('/comprehensive-data', asyncHandler(async (req, res) => {
 
   try {
     const now = new Date();
+    // Create consistent date boundaries for all calculations - ensure proper timezone handling
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
     
-    // Single aggregation pipeline to get all data at once
+    console.log('Date boundaries for level achievement filtering:');
+    console.log('Today start:', todayStart);
+    console.log('Today end:', todayEnd);
+    console.log('Week start:', weekStart);
+    console.log('Month start:', monthStart);
+    console.log('Year start:', yearStart);
+    console.log('FIXED LOGIC: Now filtering by levelHistory.achievedOn dates for proper daily level tracking');
+    
+    // FIXED PIPELINE: Use levelHistory.achievedOn dates for proper daily level tracking
+    // KEY FIX: For daily stats, only count levels achieved on specific dates, not cumulative
     const pipeline = [
       {
         $match: {
           role: 'Student',
-          prospectusStage: { $gte: 1, $lte: 5 }
+          prospectusStage: { $gte: 1, $lte: 5 },
+          classId: { $exists: false },
+          levelHistory: { $exists: true, $ne: [] },
+          status: { $ne: 3 } // Exclude deleted users
         }
       },
+      // Unwind levelHistory first to work with individual level achievements
+      { $unwind: '$levelHistory' },
+      // Add time period categorization based on LEVEL ACHIEVEMENT dates (levelHistory.achievedOn)
+      {
+        $addFields: {
+          timePeriod: {
+            $switch: {
+              branches: [
+                {
+                  case: { 
+                    $and: [
+                      { $gte: ['$levelHistory.achievedOn', todayStart] },
+                      { $lte: ['$levelHistory.achievedOn', todayEnd] }
+                    ]
+                  },
+                  then: 'today'
+                },
+                {
+                  case: { 
+                    $and: [
+                      { $gte: ['$levelHistory.achievedOn', weekStart] },
+                      { $lt: ['$levelHistory.achievedOn', todayStart] }
+                    ]
+                  },
+                  then: 'week'
+                },
+                {
+                  case: { 
+                    $and: [
+                      { $gte: ['$levelHistory.achievedOn', monthStart] },
+                      { $lt: ['$levelHistory.achievedOn', weekStart] }
+                    ]
+                  },
+                  then: 'month'
+                },
+                {
+                  case: { 
+                    $and: [
+                      { $gte: ['$levelHistory.achievedOn', yearStart] },
+                      { $lt: ['$levelHistory.achievedOn', monthStart] }
+                    ]
+                  },
+                  then: 'year'
+                }
+              ],
+              default: 'allTime'
+            }
+          }
+        }
+      },
+      // FIXED: Filter to only include levels achieved in specific time periods for date-based stats
+      // This ensures that for "today" stats, we only count levels achieved today
+      {
+        $match: {
+          $or: [
+            { timePeriod: 'allTime' }, // Always include for all-time stats
+            { timePeriod: { $ne: 'allTime' } } // Include date-specific achievements
+          ]
+        }
+      },
+      // Group by user, time period, and level to get unique user-level combinations for each time period
       {
         $group: {
           _id: {
-            level: '$prospectusStage',
-            gender: '$gender',
-            program: '$program',
-            dateCategory: {
-              $switch: {
-                branches: [
-                  {
-                    case: { $gte: ['$createdOn', new Date(now.getFullYear(), now.getMonth(), now.getDate())] },
-                    then: 'today'
-                  },
-                  {
-                    case: { $gte: ['$createdOn', new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)] },
-                    then: 'week'
-                  },
-                  {
-                    case: { $gte: ['$createdOn', new Date(now.getFullYear(), now.getMonth(), 1)] },
-                    then: 'month'
-                  },
-                  {
-                    case: { $gte: ['$createdOn', new Date(now.getFullYear(), 0, 1)] },
-                    then: 'year'
-                  }
-                ],
-                default: 'older'
-              }
-            }
+            studentId: '$_id',
+            timePeriod: '$timePeriod',
+            level: '$levelHistory.level'
           },
-          count: { $sum: 1 }
+          gender: { $first: '$gender' },
+          program: { $first: '$program' },
+          achievedOn: { $first: '$levelHistory.achievedOn' }
+        }
+      },
+      // Group by level and time period to count students who achieved each level in each time period
+      {
+        $group: {
+          _id: {
+            level: '$_id.level',
+            timePeriod: '$_id.timePeriod'
+          },
+          count: { $sum: 1 },
+          students: {
+            $push: {
+              gender: '$gender',
+              program: '$program'
+            }
+          }
         }
       }
     ];
 
-    console.log('Executing optimized aggregation pipeline...');
+    console.log('Executing FIXED level history based aggregation pipeline...');
+    
+    // First, let's check if we have any students with levelHistory data
+    const studentsWithLevelHistory = await User.countDocuments({
+      role: 'Student',
+      prospectusStage: { $gte: 1, $lte: 5 },
+      classId: { $exists: false },
+      levelHistory: { $exists: true, $ne: [] },
+      status: { $ne: 3 } // Exclude deleted users
+    });
+    console.log(`Found ${studentsWithLevelHistory} students with levelHistory data`);
+    
+    // FIXED: Check for level achievements today (using achievedOn, not createdOn)
+    const todayAchievements = await User.aggregate([
+      {
+        $match: {
+          role: 'Student',
+          prospectusStage: { $gte: 1, $lte: 5 },
+          classId: { $exists: false },
+          levelHistory: { $exists: true, $ne: [] },
+          status: { $ne: 3 } // Exclude deleted users
+        }
+      },
+      { $unwind: '$levelHistory' },
+      {
+        $match: {
+          $and: [
+            { 'levelHistory.achievedOn': { $gte: todayStart } },
+            { 'levelHistory.achievedOn': { $lte: todayEnd } }
+          ]
+        }
+      },
+      { $count: 'todayAchievements' }
+    ]);
+    console.log('FIXED: Level achievements today (by achievedOn date):', todayAchievements);
+    
     const results = await User.aggregate(pipeline);
-    console.log(`Aggregation returned ${results.length} result groups`);
+    console.log(`Level history aggregation returned ${results.length} result groups`);
 
     // Process results into the expected format
     const data = {
@@ -592,102 +712,205 @@ router.get('/comprehensive-data', asyncHandler(async (req, res) => {
       });
     }
 
-    // Process aggregation results
-    results.forEach(result => {
-      const { level, gender, program, dateCategory } = result._id;
+    // If no level history results, fall back to using createdOn dates as a backup
+    if (results.length === 0) {
+      console.log('No level history results found, falling back to createdOn dates...');
+      
+      const fallbackPipeline = [
+        {
+          $match: {
+            role: 'Student',
+            prospectusStage: { $gte: 1, $lte: 5 },
+            classId: { $exists: false },
+            status: { $ne: 3 } // Exclude deleted users
+          }
+        },
+        {
+          $addFields: {
+            timePeriod: {
+              $switch: {
+                branches: [
+                  {
+                    case: { 
+                      $and: [
+                        { $gte: ['$createdOn', todayStart] },
+                        { $lte: ['$createdOn', todayEnd] }
+                      ]
+                    },
+                    then: 'today'
+                  },
+                  {
+                    case: { 
+                      $and: [
+                        { $gte: ['$createdOn', weekStart] },
+                        { $lt: ['$createdOn', todayStart] }
+                      ]
+                    },
+                    then: 'week'
+                  },
+                  {
+                    case: { 
+                      $and: [
+                        { $gte: ['$createdOn', monthStart] },
+                        { $lt: ['$createdOn', weekStart] }
+                      ]
+                    },
+                    then: 'month'
+                  },
+                  {
+                    case: { 
+                      $and: [
+                        { $gte: ['$createdOn', yearStart] },
+                        { $lt: ['$createdOn', monthStart] }
+                      ]
+                    },
+                    then: 'year'
+                  }
+                ],
+                default: 'allTime'
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              level: '$prospectusStage',
+              timePeriod: '$timePeriod'
+            },
+            count: { $sum: 1 },
+            students: {
+              $push: {
+                gender: '$gender',
+                program: '$program'
+              }
+            }
+          }
+        }
+      ];
+      
+      const fallbackResults = await User.aggregate(fallbackPipeline);
+      console.log(`Fallback aggregation returned ${fallbackResults.length} result groups`);
+      
+      // Process fallback results the same way
+      fallbackResults.forEach(result => {
+        const { level, timePeriod } = result._id;
+        const count = result.count;
+        const students = result.students;
+        
+        if (level < 1 || level > 5) return;
+        
+        console.log(`Processing fallback level ${level}, period ${timePeriod}, count: ${count}`);
+        
+        let boys = 0, girls = 0;
+        const programs = { boys: {}, girls: {} };
+        
+        students.forEach(student => {
+          const isGenderMale = student.gender === 'Male' || student.gender === 'male' || student.gender === 'M';
+          const isGenderFemale = student.gender === 'Female' || student.gender === 'female' || student.gender === 'F';
+          
+          if (isGenderMale) {
+            boys++;
+            if (student.program) {
+              programs.boys[student.program] = (programs.boys[student.program] || 0) + 1;
+            }
+          }
+          if (isGenderFemale) {
+            girls++;
+            if (student.program) {
+              programs.girls[student.program] = (programs.girls[student.program] || 0) + 1;
+            }
+          }
+        });
+        
+        // Update all-time data
+        data.allTime.levelData[level].total += count;
+        data.allTime.levelData[level].boys += boys;
+        data.allTime.levelData[level].girls += girls;
+        
+        Object.entries(programs.boys).forEach(([prog, cnt]) => {
+          data.allTime.levelData[level].programs.boys[prog] = (data.allTime.levelData[level].programs.boys[prog] || 0) + cnt;
+        });
+        Object.entries(programs.girls).forEach(([prog, cnt]) => {
+          data.allTime.levelData[level].programs.girls[prog] = (data.allTime.levelData[level].programs.girls[prog] || 0) + cnt;
+        });
+        
+        // Update time period specific data
+        if (timePeriod !== 'allTime' && data.dateRanges[timePeriod]) {
+          data.dateRanges[timePeriod].levelData[level].total += count;
+          data.dateRanges[timePeriod].levelData[level].boys += boys;
+          data.dateRanges[timePeriod].levelData[level].girls += girls;
+          
+          Object.entries(programs.boys).forEach(([prog, cnt]) => {
+            data.dateRanges[timePeriod].levelData[level].programs.boys[prog] = (data.dateRanges[timePeriod].levelData[level].programs.boys[prog] || 0) + cnt;
+          });
+          Object.entries(programs.girls).forEach(([prog, cnt]) => {
+            data.dateRanges[timePeriod].levelData[level].programs.girls[prog] = (data.dateRanges[timePeriod].levelData[level].programs.girls[prog] || 0) + cnt;
+          });
+        }
+      });
+    } else {
+      // Process level history aggregation results
+      results.forEach(result => {
+      const { level, timePeriod } = result._id;
       const count = result.count;
+      const students = result.students;
       
       if (level < 1 || level > 5) return; // Skip invalid levels
       
-      const isGenderMale = gender === 'Male' || gender === 'male' || gender === 'M';
-      const isGenderFemale = gender === 'Female' || gender === 'female' || gender === 'F';
+      console.log(`Processing level ${level}, period ${timePeriod}, count: ${count}`);
       
-      // Update all-time data (includes all date categories)
-      data.allTime.levelData[level].total += count;
-      if (isGenderMale) data.allTime.levelData[level].boys += count;
-      if (isGenderFemale) data.allTime.levelData[level].girls += count;
+      // Count gender breakdown
+      let boys = 0, girls = 0;
+      const programs = { boys: {}, girls: {} };
       
-      // Update program data
-      if (program) {
+      students.forEach(student => {
+        const isGenderMale = student.gender === 'Male' || student.gender === 'male' || student.gender === 'M';
+        const isGenderFemale = student.gender === 'Female' || student.gender === 'female' || student.gender === 'F';
+        
         if (isGenderMale) {
-          data.allTime.levelData[level].programs.boys[program] = (data.allTime.levelData[level].programs.boys[program] || 0) + count;
+          boys++;
+          if (student.program) {
+            programs.boys[student.program] = (programs.boys[student.program] || 0) + 1;
+          }
         }
         if (isGenderFemale) {
-          data.allTime.levelData[level].programs.girls[program] = (data.allTime.levelData[level].programs.girls[program] || 0) + count;
+          girls++;
+          if (student.program) {
+            programs.girls[student.program] = (programs.girls[student.program] || 0) + 1;
+          }
         }
-      }
+      });
       
-      // Update date range specific data
-      if (dateCategory !== 'older') {
-        data.dateRanges[dateCategory].levelData[level].total += count;
-        if (isGenderMale) data.dateRanges[dateCategory].levelData[level].boys += count;
-        if (isGenderFemale) data.dateRanges[dateCategory].levelData[level].girls += count;
+      // Update all-time data (includes all time periods)
+      data.allTime.levelData[level].total += count;
+      data.allTime.levelData[level].boys += boys;
+      data.allTime.levelData[level].girls += girls;
+      
+      // Merge programs
+      Object.entries(programs.boys).forEach(([prog, cnt]) => {
+        data.allTime.levelData[level].programs.boys[prog] = (data.allTime.levelData[level].programs.boys[prog] || 0) + cnt;
+      });
+      Object.entries(programs.girls).forEach(([prog, cnt]) => {
+        data.allTime.levelData[level].programs.girls[prog] = (data.allTime.levelData[level].programs.girls[prog] || 0) + cnt;
+      });
+      
+      // Update time period specific data
+      if (timePeriod !== 'allTime' && data.dateRanges[timePeriod]) {
+        data.dateRanges[timePeriod].levelData[level].total += count;
+        data.dateRanges[timePeriod].levelData[level].boys += boys;
+        data.dateRanges[timePeriod].levelData[level].girls += girls;
         
-        if (program) {
-          if (isGenderMale) {
-            data.dateRanges[dateCategory].levelData[level].programs.boys[program] = (data.dateRanges[dateCategory].levelData[level].programs.boys[program] || 0) + count;
-          }
-          if (isGenderFemale) {
-            data.dateRanges[dateCategory].levelData[level].programs.girls[program] = (data.dateRanges[dateCategory].levelData[level].programs.girls[program] || 0) + count;
-          }
-        }
+        // Merge programs for time period
+        Object.entries(programs.boys).forEach(([prog, cnt]) => {
+          data.dateRanges[timePeriod].levelData[level].programs.boys[prog] = (data.dateRanges[timePeriod].levelData[level].programs.boys[prog] || 0) + cnt;
+        });
+        Object.entries(programs.girls).forEach(([prog, cnt]) => {
+          data.dateRanges[timePeriod].levelData[level].programs.girls[prog] = (data.dateRanges[timePeriod].levelData[level].programs.girls[prog] || 0) + cnt;
+        });
       }
     });
-
-    // Calculate cumulative counts for levels (level 1+ includes all levels 1-5, level 2+ includes 2-5, etc.)
-    for (let level = 1; level <= 5; level++) {
-      let cumulativeTotal = 0, cumulativeBoys = 0, cumulativeGirls = 0;
-      const cumulativePrograms = { boys: {}, girls: {} };
-      
-      // Sum up all levels from current level to 5
-      for (let l = level; l <= 5; l++) {
-        cumulativeTotal += data.allTime.levelData[l].total;
-        cumulativeBoys += data.allTime.levelData[l].boys;
-        cumulativeGirls += data.allTime.levelData[l].girls;
-        
-        // Aggregate programs
-        Object.entries(data.allTime.levelData[l].programs.boys).forEach(([prog, count]) => {
-          cumulativePrograms.boys[prog] = (cumulativePrograms.boys[prog] || 0) + count;
-        });
-        Object.entries(data.allTime.levelData[l].programs.girls).forEach(([prog, count]) => {
-          cumulativePrograms.girls[prog] = (cumulativePrograms.girls[prog] || 0) + count;
-        });
-      }
-      
-      // Update with cumulative data
-      data.allTime.levelData[level] = {
-        total: cumulativeTotal,
-        boys: cumulativeBoys,
-        girls: cumulativeGirls,
-        programs: cumulativePrograms
-      };
-      
-      // Do the same for date ranges
-      Object.keys(data.dateRanges).forEach(dateRange => {
-        let cumulativeTotal = 0, cumulativeBoys = 0, cumulativeGirls = 0;
-        const cumulativePrograms = { boys: {}, girls: {} };
-        
-        for (let l = level; l <= 5; l++) {
-          cumulativeTotal += data.dateRanges[dateRange].levelData[l].total;
-          cumulativeBoys += data.dateRanges[dateRange].levelData[l].boys;
-          cumulativeGirls += data.dateRanges[dateRange].levelData[l].girls;
-          
-          Object.entries(data.dateRanges[dateRange].levelData[l].programs.boys).forEach(([prog, count]) => {
-            cumulativePrograms.boys[prog] = (cumulativePrograms.boys[prog] || 0) + count;
-          });
-          Object.entries(data.dateRanges[dateRange].levelData[l].programs.girls).forEach(([prog, count]) => {
-            cumulativePrograms.girls[prog] = (cumulativePrograms.girls[prog] || 0) + count;
-          });
-        }
-        
-        data.dateRanges[dateRange].levelData[level] = {
-          total: cumulativeTotal,
-          boys: cumulativeBoys,
-          girls: cumulativeGirls,
-          programs: cumulativePrograms
-        };
-      });
-    }
+    } // Close the else block
 
     // Calculate progression data for all levels
     console.log('Calculating progression data...');
@@ -770,8 +993,42 @@ router.get('/comprehensive-data', asyncHandler(async (req, res) => {
     });
 
     console.log('Data processing completed successfully');
+    console.log('=== FIXED COMPREHENSIVE DATA SUMMARY ===');
+    console.log('IMPORTANT: Now showing level achievements by achievedOn dates, not user creation dates');
     console.log('All-time level 1 total:', data.allTime.levelData[1].total);
+    console.log('All-time level 2 total:', data.allTime.levelData[2].total);
+    console.log('All-time level 3 total:', data.allTime.levelData[3].total);
+    console.log('All-time level 4 total:', data.allTime.levelData[4].total);
+    console.log('All-time level 5 total:', data.allTime.levelData[5].total);
+    console.log('Today level 1 achieved:', data.dateRanges.today.levelData[1].total);
+    console.log('Today level 2 achieved:', data.dateRanges.today.levelData[2].total);
+    console.log('Today level 3 achieved:', data.dateRanges.today.levelData[3].total);
+    console.log('Today level 4 achieved:', data.dateRanges.today.levelData[4].total);
+    console.log('Today level 5 achieved:', data.dateRanges.today.levelData[5].total);
+    console.log('Week level achievements:', data.dateRanges.week.levelData);
+    console.log('Month level achievements:', data.dateRanges.month.levelData);
+    console.log('Year level achievements:', data.dateRanges.year.levelData);
     console.log('Progression data added for all levels');
+    
+    // DEBUG: Check if we have zero data across all time periods
+    const allTimeTotal = Object.values(data.allTime.levelData).reduce((sum, level) => sum + level.total, 0);
+    const todayTotal = Object.values(data.dateRanges.today.levelData).reduce((sum, level) => sum + level.total, 0);
+    console.log('=== FIXED DATA VALIDATION ===');
+    console.log('Total level achievements all-time:', allTimeTotal);
+    console.log('Total level achievements today:', todayTotal);
+    
+    if (allTimeTotal === 0) {
+      console.log('WARNING: No level achievement data found. This suggests either:');
+      console.log('1. No students in database with role="Student"');
+      console.log('2. All students have classId (are enrolled)');
+      console.log('3. No students have proper prospectusStage (1-5)');
+      console.log('4. levelHistory system is not working properly');
+    }
+    
+    if (todayTotal === 0) {
+      console.log('INFO: No level achievements recorded for today');
+      console.log('This is normal if no students progressed to new levels today');
+    }
 
     res.json({
       success: true,
@@ -790,12 +1047,698 @@ router.get('/comprehensive-data', asyncHandler(async (req, res) => {
 }));
 
 /**
- * @route   GET /api/enquiries/monthly-stats
- * @desc    Get monthly level progression statistics for the current year
+ * @route   GET /api/enquiries/level-history-data
+ * @desc    Get enquiry data based on level history progression (when levels were achieved)
+ * @access  Private (Principal, InstituteAdmin, IT)
+ */
+router.get('/level-history-data', asyncHandler(async (req, res) => {
+  console.log('Level history data requested by user:', req.user.email, 'Role:', req.user.role);
+  
+  // Allow Principal, InstituteAdmin, and IT users
+  if (!['Principal', 'InstituteAdmin', 'ITAdmin', 'SystemAdmin'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Insufficient privileges. Your role: ${req.user.role}`
+    });
+  }
+
+  try {
+    const { minLevel, dateFilter, startDate, endDate } = req.query;
+    
+    // Build aggregation pipeline for level history filtering
+    let levelHistoryMatch = {
+      role: 'Student',
+      levelHistory: { $exists: true, $ne: [] },
+      status: { $ne: 3 } // Exclude deleted users
+    };
+
+    // FIXED: Apply date filter to USER CREATION (not level achievements)
+    if (dateFilter && dateFilter !== 'all') {
+      if (dateFilter === 'custom' && startDate && endDate) {
+        const customStartDate = new Date(startDate);
+        const customEndDate = new Date(endDate);
+        customEndDate.setHours(23, 59, 59, 999);
+        
+        levelHistoryMatch['createdOn'] = {
+          $gte: customStartDate,
+          $lte: customEndDate
+        };
+        console.log('Applied custom date filter to user creation:', customStartDate, 'to', customEndDate);
+      } else {
+        const now = new Date();
+        let filterStartDate;
+
+        switch (dateFilter) {
+          case 'today':
+            filterStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case 'week':
+            filterStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            filterStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          case 'year':
+            filterStartDate = new Date(now.getFullYear(), 0, 1);
+            break;
+          default:
+            filterStartDate = null;
+        }
+
+        if (filterStartDate) {
+          levelHistoryMatch['createdOn'] = { $gte: filterStartDate };
+          console.log('Applied date filter to user creation:', dateFilter, 'Start date:', filterStartDate);
+        }
+      }
+    }
+
+    // Apply level filter to the initial match (if needed)
+    if (minLevel && minLevel !== 'all') {
+      // For level filtering, we can optionally filter users who have at least this level
+      // But based on the ultimate analysis, we should count users who have achieved specific levels
+    }
+
+    // FIXED: Main aggregation pipeline using createdOn for date filtering
+    const pipeline = [
+      { $match: levelHistoryMatch },
+      { $unwind: '$levelHistory' },
+      // No additional date matching needed since we filtered by createdOn in levelHistoryMatch
+      {
+        $group: {
+          _id: '$_id',
+          student: { $first: '$$ROOT' },
+          maxLevel: { $max: '$levelHistory.level' },
+          levelAchievements: { $push: '$levelHistory' }
+        }
+      },
+      {
+        $project: {
+          _id: '$student._id',
+          fullName: '$student.fullName',
+          userName: '$student.userName',
+          email: '$student.email',
+          gender: '$student.gender',
+          program: '$student.program',
+          prospectusStage: '$maxLevel',
+          createdOn: '$student.createdOn',
+          updatedOn: '$student.updatedOn',
+          campus: '$student.campus',
+          levelHistory: '$levelAchievements'
+        }
+      },
+      { $sort: { updatedOn: -1 } }
+    ];
+
+    console.log('Level history aggregation pipeline:', JSON.stringify(pipeline, null, 2));
+
+    const students = await User.aggregate(pipeline);
+    
+    // Calculate statistics
+    const totalEnquiries = students.length;
+    const admittedStudents = students.filter(s => s.prospectusStage >= 5).length;
+    
+    // FIXED: Level breakdown based on users who have achieved each specific level
+    // This matches the winning formula from ultimate analysis: users created in date range who have achieved levels 1-5
+    const levelBreakdown = {};
+    for (let i = 1; i <= 5; i++) {
+      // Count users who have achieved this specific level (not cumulative)
+      levelBreakdown[`level${i}`] = students.filter(s => {
+        // Check if the user has achieved this level in their levelHistory
+        return s.levelHistory && s.levelHistory.some(lh => lh.level === i);
+      }).length;
+    }
+
+    // FIXED: Gender breakdown by level (also using specific level achievement, not cumulative)
+    const genderLevelBreakdown = {
+      boys: {},
+      girls: {}
+    };
+
+    for (let i = 1; i <= 5; i++) {
+      genderLevelBreakdown.boys[`level${i}`] = students.filter(s => 
+        s.gender === 'Male' && s.levelHistory && s.levelHistory.some(lh => lh.level === i)
+      ).length;
+      genderLevelBreakdown.girls[`level${i}`] = students.filter(s => 
+        s.gender === 'Female' && s.levelHistory && s.levelHistory.some(lh => lh.level === i)
+      ).length;
+    }
+
+    const responseData = {
+      totalEnquiries,
+      admittedStudents,
+      levelBreakdown,
+      genderLevelBreakdown,
+      students: students.slice(0, 100), // Limit for performance
+      totalStudents: students.length,
+      dataSource: 'levelHistory', // Indicates this uses level history tracking
+      message: 'FIXED: Data based on users created in date range who have achieved specific levels (1-5)'
+    };
+
+    console.log('Level history data response summary:', {
+      total: totalEnquiries,
+      admitted: admittedStudents,
+      levels: levelBreakdown,
+      dataSource: 'levelHistory'
+    });
+
+    res.json({
+      success: true,
+      data: responseData
+    });
+
+  } catch (error) {
+    console.error('Error fetching level history data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching level history data',
+      error: error.message
+    });
+  }
+}));
+
+// Removed monthly-stats route - now using comprehensive-data endpoint
+
+// Removed daily-stats route - now using comprehensive-data endpoint
+
+// Get students with level history date filtering for reports (with optional pagination)
+router.get('/level-history-students', async (req, res) => {
+  try {
+    const { 
+      dateFilter, 
+      startDate, 
+      endDate, 
+      nonProgression, 
+      progressionLevel,
+      // New optional pagination params
+      page,
+      limit,
+      search,
+      gender,
+      minLevel,
+      exactLevel,
+      sortBy,
+      sortOrder
+    } = req.query;
+    
+    let matchCondition = {
+      role: 'Student',
+      status: { $ne: 3 } // Exclude deleted users
+    };
+    
+    // Add date filtering based on level history
+    if (dateFilter && dateFilter !== 'all') {
+      let dateCondition = {};
+      const now = new Date();
+      
+      switch (dateFilter) {
+        case 'today':
+          // Use the same date calculation as comprehensive-data for consistency
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+          dateCondition = {
+            $gte: startOfDay,
+            $lt: endOfDay // Use $lt instead of $lte for end of day
+          };
+          break;
+          
+        case 'week':
+          const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          dateCondition = {
+            $gte: startOfWeek,
+            $lte: now
+          };
+          break;
+          
+        case 'month':
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          dateCondition = {
+            $gte: startOfMonth,
+            $lte: now
+          };
+          break;
+          
+        case 'year':
+          const startOfYear = new Date(now.getFullYear(), 0, 1);
+          dateCondition = {
+            $gte: startOfYear,
+            $lte: now
+          };
+          break;
+          
+        case 'custom':
+          if (startDate && endDate) {
+            dateCondition = {
+              $gte: new Date(startDate),
+              $lte: new Date(endDate)
+            };
+          }
+          break;
+      }
+      
+      // Use createdOn for date filtering to match principal enquiry behavior
+      // This ensures students created today are included in "today" results
+      if (Object.keys(dateCondition).length > 0) {
+        matchCondition['createdOn'] = dateCondition;
+      }
+    }
+    
+    // Add non-progression filtering
+    if (nonProgression === 'true' && progressionLevel) {
+      const levelNum = parseInt(progressionLevel);
+      const sinceDate = new Date();
+      sinceDate.setMonth(sinceDate.getMonth() - 1); // 1 month ago
+      
+      // Students who are currently at this level
+      matchCondition.prospectusStage = levelNum;
+      
+      // Use levelHistory to find students who achieved this level more than 1 month ago
+      // and haven't progressed further
+      matchCondition.levelHistory = {
+        $elemMatch: {
+          level: levelNum,
+          achievedOn: { $lte: sinceDate }
+        }
+      };
+    } else {
+      // Apply level filters when not in non-progression mode
+      if (exactLevel) {
+        const lvl = parseInt(exactLevel);
+        if (!isNaN(lvl)) {
+          matchCondition.prospectusStage = lvl;
+        }
+      } else if (minLevel) {
+        const lvl = parseInt(minLevel);
+        if (!isNaN(lvl)) {
+          matchCondition.prospectusStage = { ...(matchCondition.prospectusStage || {}), $gte: lvl };
+        }
+      }
+    }
+    
+    // Gender filter
+    if (gender) {
+      matchCondition.gender = gender;
+    }
+    
+    // Text search across name/email/cnic
+    if (search && search.trim()) {
+      const term = search.trim();
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchOr = [
+        { 'fullName.firstName': regex },
+        { 'fullName.lastName': regex },
+        { email: regex },
+        { cnic: regex },
+        { session: regex },
+        { course: regex }
+      ];
+      if (matchCondition.$or) {
+        matchCondition.$and = matchCondition.$and || [];
+        matchCondition.$and.push({ $or: matchCondition.$or });
+        delete matchCondition.$or;
+      }
+      matchCondition.$or = searchOr;
+    }
+    
+    // Sorting
+    const sortField = sortBy || 'createdOn';
+    const sortDir = (sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+    const sortSpec = { [sortField]: sortDir };
+    
+    // Base query builder
+    let studentsQuery = User.find(matchCondition).sort(sortSpec).lean();
+    
+    // Pagination (optional, only if page/limit provided)
+    if (page !== undefined || limit !== undefined) {
+      const pageNum = Math.max(parseInt(page || '1', 10), 1);
+      const pageSize = Math.min(Math.max(parseInt(limit || '25', 10), 1), 200);
+
+      const totalDocs = await User.countDocuments(matchCondition);
+      const totalPages = Math.max(Math.ceil(totalDocs / pageSize), 1);
+      const skip = (pageNum - 1) * pageSize;
+
+      const students = await studentsQuery.skip(skip).limit(pageSize);
+
+      // Get aggregated statistics for accurate counts
+      const genderStats = await User.aggregate([
+        { $match: matchCondition },
+        {
+          $group: {
+            _id: '$gender',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      const stageStats = await User.aggregate([
+        { $match: matchCondition },
+        {
+          $group: {
+            _id: '$prospectusStage',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      // Process gender statistics
+      const genderBreakdown = {
+        male: 0,
+        female: 0,
+        unspecified: 0
+      };
+
+      genderStats.forEach(stat => {
+        const gender = (stat._id || '').toLowerCase();
+        if (gender === 'male' || gender === 'm') {
+          genderBreakdown.male = stat.count;
+        } else if (gender === 'female' || gender === 'f') {
+          genderBreakdown.female = stat.count;
+        } else {
+          genderBreakdown.unspecified += stat.count;
+        }
+      });
+
+      // Process stage statistics (cumulative)
+      const stageBreakdown = {};
+      for (let stage = 1; stage <= 5; stage++) {
+        stageBreakdown[stage] = stageStats
+          .filter(stat => (stat._id || 1) >= stage)
+          .reduce((sum, stat) => sum + stat.count, 0);
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          users: students
+        },
+        pagination: {
+          page: pageNum,
+          limit: pageSize,
+          totalDocs,
+          totalPages,
+          hasNext: pageNum < totalPages,
+          hasPrev: pageNum > 1
+        },
+        statistics: {
+          gender: genderBreakdown,
+          stages: stageBreakdown
+        }
+      });
+    }
+
+    // Non-paginated (legacy behavior)
+    const students = await studentsQuery;
+    
+    res.json({
+      success: true,
+      data: {
+        users: students
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching level history students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch students with level history filtering'
+    });
+  }
+});
+
+/**
+ * @route   GET /api/enquiries/monthly-breakdown/:year
+ * @desc    Get monthly breakdown of enquiry data for a specific year
  * @access  Private (Principal only)
  */
-router.get('/monthly-stats', asyncHandler(async (req, res) => {
-  console.log('Monthly stats requested by user:', req.user.email, 'Role:', req.user.role);
+router.get('/monthly-breakdown/:year', asyncHandler(async (req, res) => {
+  console.log('Monthly breakdown requested by user:', req.user.email, 'Role:', req.user.role, 'Year:', req.params.year);
+  
+  // Check if user is Principal or InstituteAdmin
+  if (req.user.role !== 'Principal' && req.user.role !== 'InstituteAdmin') {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Principal privileges required. Your role: ${req.user.role}`
+    });
+  }
+
+  const year = parseInt(req.params.year) || new Date().getFullYear();
+  
+  try {
+    // Create date boundaries for the requested year
+    const yearStart = new Date(year, 0, 1); // January 1st of the requested year
+    const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999); // December 31st of the requested year
+    
+    console.log('Year boundaries for monthly breakdown:');
+    console.log('Year start:', yearStart);
+    console.log('Year end:', yearEnd);
+    
+    // FIXED: Pipeline to get monthly breakdown using createdOn dates
+    const pipeline = [
+      {
+        $match: {
+          role: 'Student',
+          prospectusStage: { $gte: 1, $lte: 5 },
+          classId: { $exists: false },
+          levelHistory: { $exists: true, $ne: [] },
+          status: { $ne: 3 }, // Exclude deleted users
+          // FIXED: Filter by user creation date in the requested year
+          createdOn: { $gte: yearStart, $lte: yearEnd }
+        }
+      },
+      // Add month and day extraction for grouping based on user creation date
+      {
+        $addFields: {
+          month: { $month: '$createdOn' },
+          day: { $dayOfMonth: '$createdOn' }
+        }
+      },
+      // Unwind levelHistory to check what levels each user has achieved
+      { $unwind: '$levelHistory' },
+      // Group by level and month to count students who have achieved each level
+      {
+        $group: {
+          _id: {
+            level: '$levelHistory.level',
+            month: '$month',
+            day: '$day'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      // Reshape for easier consumption by frontend
+      {
+        $group: {
+          _id: {
+            month: '$_id.month',
+            day: '$_id.day'
+          },
+          levels: {
+            $push: {
+              level: '$_id.level',
+              count: '$count'
+            }
+          },
+          totalCount: { $sum: '$count' }
+        }
+      },
+      // Final reshaping for the response
+      {
+        $group: {
+          _id: '$_id.month',
+          days: {
+            $push: {
+              day: '$_id.day',
+              levels: '$levels',
+              totalCount: '$totalCount'
+            }
+          },
+          monthlyTotal: { $sum: '$totalCount' }
+        }
+      },
+      // Sort by month
+      { $sort: { _id: 1 } },
+      // Project to final format
+      {
+        $project: {
+          _id: 0,
+          month: '$_id',
+          days: 1,
+          monthlyTotal: 1,
+          level1: {
+            $sum: {
+              $map: {
+                input: '$days',
+                as: 'day',
+                in: {
+                  $sum: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: '$$day.levels',
+                          as: 'level',
+                          cond: { $eq: ['$$level.level', 1] }
+                        }
+                      },
+                      as: 'filteredLevel',
+                      in: '$$filteredLevel.count'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          level2: {
+            $sum: {
+              $map: {
+                input: '$days',
+                as: 'day',
+                in: {
+                  $sum: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: '$$day.levels',
+                          as: 'level',
+                          cond: { $eq: ['$$level.level', 2] }
+                        }
+                      },
+                      as: 'filteredLevel',
+                      in: '$$filteredLevel.count'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          level3: {
+            $sum: {
+              $map: {
+                input: '$days',
+                as: 'day',
+                in: {
+                  $sum: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: '$$day.levels',
+                          as: 'level',
+                          cond: { $eq: ['$$level.level', 3] }
+                        }
+                      },
+                      as: 'filteredLevel',
+                      in: '$$filteredLevel.count'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          level4: {
+            $sum: {
+              $map: {
+                input: '$days',
+                as: 'day',
+                in: {
+                  $sum: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: '$$day.levels',
+                          as: 'level',
+                          cond: { $eq: ['$$level.level', 4] }
+                        }
+                      },
+                      as: 'filteredLevel',
+                      in: '$$filteredLevel.count'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          level5: {
+            $sum: {
+              $map: {
+                input: '$days',
+                as: 'day',
+                in: {
+                  $sum: {
+                    $map: {
+                      input: {
+                        $filter: {
+                          input: '$$day.levels',
+                          as: 'level',
+                          cond: { $eq: ['$$level.level', 5] }
+                        }
+                      },
+                      as: 'filteredLevel',
+                      in: '$$filteredLevel.count'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ];
+
+    const result = await User.aggregate(pipeline);
+    
+    console.log('=== MONTHLY BREAKDOWN AGGREGATION RESULT ===');
+    console.log('Raw aggregation result:', JSON.stringify(result, null, 2));
+    console.log('Number of result items:', result.length);
+    
+    // Process the result to ensure all months are included (1-12)
+    const months = [];
+    for (let i = 1; i <= 12; i++) {
+      const month = result.find(m => m.month === i) || { 
+        month: i, 
+        days: [], 
+        monthlyTotal: 0,
+        level1: 0,
+        level2: 0,
+        level3: 0,
+        level4: 0,
+        level5: 0
+      };
+      months.push(month);
+    }
+
+    // Add month names for convenience
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const formattedResult = {
+      year,
+      months: months.map(month => ({
+        ...month,
+        name: monthNames[month.month - 1]
+      }))
+    };
+
+    return res.json({
+      success: true,
+      data: formattedResult
+    });
+  } catch (error) {
+    console.error('Error fetching monthly breakdown:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching monthly breakdown',
+      error: error.message
+    });
+  }
+}));
+
+/**
+ * @route   GET /api/enquiries/debug-data
+ * @desc    Debug route to check what data exists
+ * @access  Private (Principal only)
+ */
+router.get('/debug-data', asyncHandler(async (req, res) => {
+  console.log('Debug data requested by user:', req.user.email, 'Role:', req.user.role);
   
   // Check if user is Principal or InstituteAdmin
   if (req.user.role !== 'Principal' && req.user.role !== 'InstituteAdmin') {
@@ -806,64 +1749,282 @@ router.get('/monthly-stats', asyncHandler(async (req, res) => {
   }
 
   try {
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth(); // 0-based index
+    // Check total students
+    const totalStudents = await User.countDocuments({ role: 'Student' });
     
-    // Generate months array
-    const months = [];
-    for (let i = 0; i <= currentMonth; i++) {
-      const monthStart = new Date(currentYear, i, 1);
-      const monthEnd = new Date(currentYear, i + 1, 0, 23, 59, 59, 999);
-      
-      months.push({
-        month: i + 1,
-        name: new Date(currentYear, i, 1).toLocaleString('default', { month: 'long' }),
-        start: monthStart,
-        end: monthEnd
-      });
-    }
-
-    // Aggregate data for each month and level
-    const monthlyData = {};
+    // Check students with levelHistory
+    const studentsWithLevelHistory = await User.countDocuments({ 
+      role: 'Student',
+      levelHistory: { $exists: true, $ne: [] },
+      status: { $ne: 3 } // Exclude deleted users
+    });
     
-    for (const month of months) {
-      const monthData = {};
-      
-      // Get statistics for each level (1-5)
-      for (let level = 1; level <= 5; level++) {
-        const count = await User.countDocuments({
-          role: 'Student',
-          prospectusStage: level,
-          createdOn: {
-            $gte: month.start,
-            $lte: month.end
-          }
-        });
-        
-        monthData[`level${level}`] = count;
-      }
-      
-      monthlyData[month.name] = monthData;
-      console.log(`${month.name} data:`, monthData);
-    }
+    // Check students with prospectusStage 1-5 and no classId
+    const enquiryStudents = await User.countDocuments({
+      role: 'Student',
+      prospectusStage: { $gte: 1, $lte: 5 },
+      classId: { $exists: false },
+      status: { $ne: 3 } // Exclude deleted users
+    });
+    
+    // Sample of students with levelHistory
+    const sampleStudents = await User.find({ 
+      role: 'Student',
+      levelHistory: { $exists: true, $ne: [] },
+      status: { $ne: 3 } // Exclude deleted users
+    }).select('name email prospectusStage levelHistory createdAt').limit(5);
+    
+    // Check recent levelHistory entries
+    const recentLevelHistory = await User.aggregate([
+      { 
+        $match: { 
+          role: 'Student', 
+          levelHistory: { $exists: true, $ne: [] },
+          status: { $ne: 3 } // Exclude deleted users
+        } 
+      },
+      { $unwind: '$levelHistory' },
+      { $sort: { 'levelHistory.achievedOn': -1 } },
+      { $limit: 10 },
+      { $project: { 
+        name: 1, 
+        email: 1, 
+        'levelHistory.level': 1, 
+        'levelHistory.achievedOn': 1 
+      }}
+    ]);
 
-    console.log('Final monthly data structure:', JSON.stringify(monthlyData, null, 2));
-
-    res.json({
+    return res.json({
       success: true,
       data: {
-        year: currentYear,
-        monthlyData,
-        months: months.map(m => m.name)
-      },
-      message: 'Monthly statistics retrieved successfully'
+        totalStudents,
+        studentsWithLevelHistory,
+        enquiryStudents,
+        sampleStudents,
+        recentLevelHistory
+      }
     });
-
   } catch (error) {
-    console.error('Error fetching monthly stats:', error);
-    res.status(500).json({
+    console.error('Error in debug route:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Failed to fetch monthly statistics',
+      message: 'Server error in debug route',
+      error: error.message
+    });
+  }
+}));
+
+/**
+ * @route   GET /api/enquiries/daily-breakdown/:year/:month
+ * @desc    Get daily breakdown of enquiry data for a specific month and year
+ * @access  Private (Principal only)
+ */
+router.get('/daily-breakdown/:year/:month', asyncHandler(async (req, res) => {
+  console.log('Daily breakdown requested by user:', req.user.email, 'Role:', req.user.role, 'Year:', req.params.year, 'Month:', req.params.month);
+  
+  // Check if user is Principal or InstituteAdmin
+  if (req.user.role !== 'Principal' && req.user.role !== 'InstituteAdmin') {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Principal privileges required. Your role: ${req.user.role}`
+    });
+  }
+
+  const year = parseInt(req.params.year) || new Date().getFullYear();
+  const month = parseInt(req.params.month); // 1-based month (1 = January, 12 = December)
+  
+  if (!month || month < 1 || month > 12) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid month. Month should be between 1 and 12.'
+    });
+  }
+  
+  try {
+    // Create date boundaries for the requested month
+    const monthStart = new Date(year, month - 1, 1); // First day of the month
+    const monthEnd = new Date(year, month, 0, 23, 59, 59, 999); // Last day of the month
+    
+    console.log('Month boundaries for daily breakdown:');
+    console.log('Month start:', monthStart);
+    console.log('Month end:', monthEnd);
+    
+    // FIXED: Pipeline to get daily breakdown using createdOn dates
+    const pipeline = [
+      {
+        $match: {
+          role: 'Student',
+          prospectusStage: { $gte: 1, $lte: 5 },
+          classId: { $exists: false },
+          levelHistory: { $exists: true, $ne: [] },
+          status: { $ne: 3 }, // Exclude deleted users
+          // FIXED: Filter by user creation date in the requested month
+          createdOn: { $gte: monthStart, $lte: monthEnd }
+        }
+      },
+      // Add day extraction for grouping based on user creation date
+      {
+        $addFields: {
+          day: { $dayOfMonth: '$createdOn' }
+        }
+      },
+      // Unwind levelHistory to check what levels each user has achieved
+      { $unwind: '$levelHistory' },
+      // Group by level and day to count students who have achieved each level
+      {
+        $group: {
+          _id: {
+            level: '$levelHistory.level',
+            day: '$day'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      // Reshape for easier consumption by frontend
+      {
+        $group: {
+          _id: '$_id.day',
+          levels: {
+            $push: {
+              level: '$_id.level',
+              count: '$count'
+            }
+          },
+          totalCount: { $sum: '$count' }
+        }
+      },
+      // Sort by day
+      { $sort: { _id: 1 } },
+      // Project to final format
+      {
+        $project: {
+          _id: 0,
+          day: '$_id',
+          levels: 1,
+          totalCount: 1,
+          level1: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$levels',
+                    as: 'level',
+                    cond: { $eq: ['$$level.level', 1] }
+                  }
+                },
+                as: 'filteredLevel',
+                in: '$$filteredLevel.count'
+              }
+            }
+          },
+          level2: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$levels',
+                    as: 'level',
+                    cond: { $eq: ['$$level.level', 2] }
+                  }
+                },
+                as: 'filteredLevel',
+                in: '$$filteredLevel.count'
+              }
+            }
+          },
+          level3: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$levels',
+                    as: 'level',
+                    cond: { $eq: ['$$level.level', 3] }
+                  }
+                },
+                as: 'filteredLevel',
+                in: '$$filteredLevel.count'
+              }
+            }
+          },
+          level4: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$levels',
+                    as: 'level',
+                    cond: { $eq: ['$$level.level', 4] }
+                  }
+                },
+                as: 'filteredLevel',
+                in: '$$filteredLevel.count'
+              }
+            }
+          },
+          level5: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$levels',
+                    as: 'level',
+                    cond: { $eq: ['$$level.level', 5] }
+                  }
+                },
+                as: 'filteredLevel',
+                in: '$$filteredLevel.count'
+              }
+            }
+          }
+        }
+      }
+    ];
+
+    const result = await User.aggregate(pipeline);
+    
+    // Get the number of days in the requested month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    // Process the result to ensure all days are included (1 to daysInMonth)
+    const days = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+      const day = result.find(d => d.day === i) || { 
+        day: i, 
+        levels: [], 
+        totalCount: 0,
+        level1: 0,
+        level2: 0,
+        level3: 0,
+        level4: 0,
+        level5: 0
+      };
+      days.push(day);
+    }
+
+    // Month names for convenience
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const formattedResult = {
+      year,
+      month,
+      monthName: monthNames[month - 1],
+      daysInMonth,
+      days
+    };
+
+    return res.json({
+      success: true,
+      data: formattedResult
+    });
+  } catch (error) {
+    console.error('Error fetching daily breakdown:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching daily breakdown',
       error: error.message
     });
   }

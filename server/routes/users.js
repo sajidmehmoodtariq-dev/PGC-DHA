@@ -23,10 +23,15 @@ router.get('/',
       limit = 10,
       search = '',
       role = '',
+      excludeRole = '', // Add excludeRole parameter
       status = '',
       enquiryLevel = '',
       grade = '',
       campus = '',
+      gender = '', // Add gender filter
+      minLevel = '', // Add minimum level filter
+      excludeClassAssigned = '', // Add excludeClassAssigned parameter
+      hasClassAssigned = '', // Add hasClassAssigned parameter for students WITH classes
       sortBy = 'createdAt',
       sortOrder = 'desc',
       dateFilter = '',
@@ -37,10 +42,11 @@ router.get('/',
     } = req.query;
 
     // Build filter object
-    const filter = {
-      // By default, exclude deleted users
-      status: { $ne: 3 }
-    };
+    const filter = {};
+    
+    // ALWAYS exclude deleted users unless explicitly requested by admin
+    // This ensures deleted users never show up in regular enquiry management
+    filter.status = { $ne: 3 };
 
     // Apply date filter
     if (dateFilter && dateFilter !== 'all') {
@@ -57,27 +63,42 @@ router.get('/',
       } else {
         // Handle predefined date filters
         const now = new Date();
-        let filterStartDate;
+        let filterStartDate, filterEndDate;
 
         switch (dateFilter) {
           case 'today':
+            // Use same calculation as comprehensive-data for consistency
             filterStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            filterEndDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
             break;
           case 'week':
             filterStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            filterEndDate = new Date();
             break;
           case 'month':
             filterStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            filterEndDate = new Date();
             break;
           case 'year':
             filterStartDate = new Date(now.getFullYear(), 0, 1);
+            filterEndDate = new Date();
             break;
           default:
             filterStartDate = null;
+            filterEndDate = null;
         }
 
         if (filterStartDate) {
-          filter.createdOn = { $gte: filterStartDate };
+          if (dateFilter === 'today') {
+            // For today, use exact range like comprehensive-data
+            filter.createdOn = { 
+              $gte: filterStartDate,
+              $lt: filterEndDate 
+            };
+          } else {
+            // For other ranges, use >= start date
+            filter.createdOn = { $gte: filterStartDate };
+          }
         }
       }
     }
@@ -87,9 +108,20 @@ router.get('/',
       const level = parseInt(progressionLevel);
       
       // For non-progression filtering, we need to find students who:
-      // Are currently at (level - 1) and should have progressed to level but didn't
-      if (level > 1 && level <= 5) {
-        filter.prospectusStage = level - 1;
+      // Are currently at this exact level and achieved it more than 1 month ago
+      if (level >= 1 && level <= 5) {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        
+        filter.prospectusStage = level; // Students currently at this level
+        
+        // Use levelHistory to find when they achieved this level
+        filter.levelHistory = {
+          $elemMatch: {
+            level: level,
+            achievedOn: { $lte: oneMonthAgo }
+          }
+        };
       }
     }
 
@@ -107,7 +139,16 @@ router.get('/',
 
     // Role filter - normalize the role before filtering
     if (role) {
-      filter.role = normalizeRole(role);
+      const normalizedRole = normalizeRole(role);
+      console.log(`Role filter: "${role}" normalized to "${normalizedRole}"`);
+      filter.role = normalizedRole;
+    }
+
+    // Exclude role filter - for user management that wants to exclude students
+    if (excludeRole) {
+      const normalizedExcludeRole = normalizeRole(excludeRole);
+      console.log(`Exclude role filter: "${excludeRole}" normalized to "${normalizedExcludeRole}"`);
+      filter.role = { $ne: normalizedExcludeRole };
     }
 
     // Status filter
@@ -120,7 +161,15 @@ router.get('/',
         filter.isApproved = true;
       } else if (status === 'pending') {
         filter.isApproved = false;
+      } else if (status === 'all') {
+        // If explicitly requesting all users, remove the default status filter
+        // BUT this should be restricted to admin users only
+        if (req.user && ['SystemAdmin', 'ITAdmin'].includes(req.user.role)) {
+          delete filter.status;
+        }
+        // For non-admin users, keep the default filter (exclude deleted)
       }
+      // For any other status values, keep the default filter (exclude deleted)
     }
 
     // Enquiry Level filter (for students)
@@ -141,12 +190,40 @@ router.get('/',
       ];
     }
 
+    // Gender filter
+    if (gender) {
+      filter.gender = gender;
+    }
+
+    // Minimum Level filter (for students)
+    if (minLevel) {
+      const levelNumber = parseInt(minLevel);
+      filter.$or = [
+        { prospectusStage: { $gte: levelNumber } }, // Use prospectusStage
+        { enquiryLevel: { $gte: levelNumber } } // Fallback to enquiryLevel
+      ];
+    }
+
+    // Exclude students with class assignments (for enquiry reports)
+    if (excludeClassAssigned === 'true') {
+      filter.classId = { $exists: false };
+      // Also apply the same level constraints as Principal enquiry reports
+      filter.prospectusStage = { $gte: 1, $lte: 5 };
+    }
+
+    // Include only students with class assignments (for student profiles)
+    if (hasClassAssigned === 'true') {
+      filter.classId = { $exists: true };
+    }
+
     // Build sort object
     const sort = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    console.log('Final filter for users query:', JSON.stringify(filter, null, 2));
 
     // Execute query
     const users = await User.find(filter)
@@ -156,8 +233,65 @@ router.get('/',
       .limit(parseInt(limit))
       .lean();
 
+    console.log(`Found ${users.length} users matching filter`);
+
     const total = await User.countDocuments(filter);
     const totalPages = Math.ceil(total / parseInt(limit));
+
+    // Get aggregated statistics for accurate counts when pagination is requested
+    let statistics = null;
+    if (parseInt(page) && parseInt(limit) <= 200) { // Only for reasonable page sizes
+      const genderStats = await User.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: '$gender',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      const stageStats = await User.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: '$prospectusStage',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      // Process gender statistics
+      const genderBreakdown = {
+        male: 0,
+        female: 0,
+        unspecified: 0
+      };
+
+      genderStats.forEach(stat => {
+        const gender = (stat._id || '').toLowerCase();
+        if (gender === 'male' || gender === 'm') {
+          genderBreakdown.male = stat.count;
+        } else if (gender === 'female' || gender === 'f') {
+          genderBreakdown.female = stat.count;
+        } else {
+          genderBreakdown.unspecified += stat.count;
+        }
+      });
+
+      // Process stage statistics (cumulative)
+      const stageBreakdown = {};
+      for (let stage = 1; stage <= 5; stage++) {
+        stageBreakdown[stage] = stageStats
+          .filter(stat => (stat._id || 1) >= stage)
+          .reduce((sum, stat) => sum + stat.count, 0);
+      }
+
+      statistics = {
+        gender: genderBreakdown,
+        stages: stageBreakdown
+      };
+    }
 
     sendSuccessResponse(res, {
       users,
@@ -168,8 +302,58 @@ router.get('/',
         limit: parseInt(limit),
         hasNext: parseInt(page) < totalPages,
         hasPrev: parseInt(page) > 1
-      }
+      },
+      statistics
     }, 'Users retrieved successfully');
+  })
+);
+
+/**
+ * @route   GET /api/users/all-students
+ * @desc    Get all students for the search page
+ * @access  Private
+ */
+router.get('/all-students', 
+  authenticate,
+  asyncHandler(async (req, res) => {
+    try {
+      console.log('Fetching all students...');
+      
+      const studentsData = await User.find({
+        role: 'Student',
+        status: { $ne: 3 } // Exclude deleted users
+      })
+      .populate('classId', 'name grade') // Populate class information
+      .select('_id fullName email username role status admissionInfo program classId createdAt dob fatherName address')
+      .sort({ 'fullName.firstName': 1 })
+      .lean();
+      
+      // Transform the data to match the expected academicInfo structure
+      const students = studentsData.map(student => ({
+        ...student,
+        academicInfo: {
+          currentClass: student.classId ? student.classId.name : (student.admissionInfo?.className || null),
+          session: student.admissionInfo?.grade || null,
+          rollNumber: null, // This field doesn't exist in the current schema
+          program: student.program || null,
+          fatherName: student.fatherName || null,
+          dateOfBirth: student.dob || null,
+          address: student.address || null
+        }
+      }));
+      
+      console.log(`Found ${students.length} total students`);
+      
+      sendSuccessResponse(res, { students }, 'Students fetched successfully');
+      
+    } catch (error) {
+      console.error('Error fetching all students:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching students',
+        error: error.message
+      });
+    }
   })
 );
 
@@ -223,8 +407,12 @@ router.post('/',
       status = 'active',
       matricMarks,      // Updated from matriculationObtainedMarks
       matricTotal,      // Updated from matriculationTotalMarks
+      academicBackground, // New field for comprehensive academic data
       coordinatorGrade, // For coordinator role
-      coordinatorCampus // For coordinator role
+      coordinatorCampus, // For coordinator role
+      classId,          // For student class assignment
+      admissionInfo,    // For Level 5 students (grade, className)
+      enquiryLevel      // New field for enquiry levels
     } = req.body;
 
     // For students, if lastName is not provided, use fatherName as lastName
@@ -364,6 +552,48 @@ router.post('/',
       matricTotal: matricTotal !== undefined && matricTotal !== '' && !isNaN(matricTotal) ? Number(matricTotal) : undefined
     };
 
+    // Handle academic background if provided (maps to academicRecords in the model)
+    if (academicBackground && typeof academicBackground === 'object') {
+      userData.academicRecords = {
+        lastUpdatedOn: new Date()
+      };
+
+      // Process matriculation data
+      if (academicBackground.matriculation) {
+        const matric = academicBackground.matriculation;
+        userData.academicRecords.matriculation = {
+          percentage: matric.percentage ? Number(matric.percentage) : undefined,
+          passingYear: matric.passingYear ? Number(matric.passingYear) : undefined,
+          board: matric.board || undefined,
+          subjects: Array.isArray(matric.subjects) ? matric.subjects.map(subject => ({
+            name: subject.name,
+            totalMarks: Number(subject.totalMarks) || 0,
+            obtainedMarks: Number(subject.obtainedMarks) || 0,
+            percentage: subject.totalMarks > 0 ? 
+              ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0
+          })).filter(subject => subject.name && subject.totalMarks > 0) : []
+        };
+      }
+
+      // Process intermediate data (map to previousGrade in the model)
+      if (academicBackground.intermediate) {
+        const inter = academicBackground.intermediate;
+        userData.academicRecords.previousGrade = {
+          grade: '11th', // This represents previous grade (11th) for 12th graders - academic record, not current grade
+          percentage: inter.percentage ? Number(inter.percentage) : undefined,
+          academicYear: inter.passingYear ? `${inter.passingYear-1}-${inter.passingYear}` : undefined,
+          subjects: Array.isArray(inter.subjects) ? inter.subjects.map(subject => ({
+            name: subject.name,
+            totalMarks: Number(subject.totalMarks) || 0,
+            obtainedMarks: Number(subject.obtainedMarks) || 0,
+            percentage: subject.totalMarks > 0 ? 
+              ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0,
+            term: 'Annual' // Default term
+          })).filter(subject => subject.name && subject.totalMarks > 0) : []
+        };
+      }
+    }
+
     // Handle emergency contact if provided
     if (emergencyContact) {
       userData.familyInfo = {
@@ -387,6 +617,79 @@ router.post('/',
       userData.campus = gender === 'Male' ? 'Boys' : 'Girls';
     }
 
+    // Handle enquiry level for students
+    if (role === 'Student') {
+      userData.enquiryLevel = enquiryLevel || 1; // Default to level 1
+      userData.prospectusStage = enquiryLevel || 1; // Sync both fields
+    }
+
+    // Handle admission info for Level 5 students
+    if (role === 'Student' && admissionInfo && typeof admissionInfo === 'object') {
+      userData.admissionInfo = {
+        grade: admissionInfo.grade || undefined,
+        className: admissionInfo.className || undefined,
+        program: admissionInfo.program || program // Use program from admissionInfo or fallback to main program
+      };
+      
+      // If student is at Level 5 and has admission info, mark as approved
+      if (enquiryLevel === 5 || (enquiryLevel >= 5)) {
+        userData.isApproved = true;
+        userData.isProcessed = true;
+        userData.enquiryLevel = 5;
+        userData.prospectusStage = 5;
+      }
+    }
+
+    // Handle class assignment for students
+    if (role === 'Student' && classId) {
+      // Validate that the class exists
+      const Class = require('../models/Class');
+      const classDoc = await Class.findById(classId);
+      
+      if (!classDoc) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected class does not exist'
+        });
+      }
+
+      // Validate that the class matches the student's gender/campus
+      if (userData.campus && classDoc.campus !== userData.campus) {
+        return res.status(400).json({
+          success: false,
+          message: `Selected class is for ${classDoc.campus} campus but student is ${userData.campus}`
+        });
+      }
+
+      // Check if class is full
+      const currentStudentCount = await User.countDocuments({
+        classId: classId,
+        role: 'Student'
+      });
+
+      if (currentStudentCount >= classDoc.maxStudents) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected class is full'
+        });
+      }
+
+      // If class is assigned, set student to level 5 (officially admitted)
+      userData.prospectusStage = 5;
+      userData.enquiryLevel = 5;
+      
+      // Assign the class
+      userData.classId = classId;
+      
+      // Set program and grade from class if not provided
+      if (!userData.program) userData.program = classDoc.program;
+      userData.admissionInfo = {
+        grade: classDoc.grade,
+        program: classDoc.program,
+        className: classDoc.name
+      };
+    }
+
     // Set status based on isActive and isApproved
     if (userData.isApproved && userData.isActive) {
       userData.status = 1; // Active
@@ -401,6 +704,39 @@ router.post('/',
     // Remove sensitive data from response
     const userResponse = user.toJSON();
     delete userResponse.password;
+
+    // If a class was assigned, add the student to the class roster and generate roll number
+    if (role === 'Student' && classId && user._id) {
+      try {
+        const Class = require('../models/Class');
+        const classDoc = await Class.findById(classId);
+        
+        // Generate roll number
+        const rollNumber = await generateRollNumber(classId, classDoc);
+        
+        // Update the user with roll number
+        await User.findByIdAndUpdate(user._id, { rollNumber });
+        
+        // Add student to class roster
+        await Class.findByIdAndUpdate(
+          classId,
+          { $addToSet: { students: user._id } }, // Use $addToSet to avoid duplicates
+          { new: true }
+        );
+        
+        // Update class student count
+        await classDoc.updateStudentCount();
+        
+        console.log(`Successfully assigned student ${user._id} to class ${classId} with roll number ${rollNumber}`);
+        
+        // Add roll number to response
+        userResponse.rollNumber = rollNumber;
+      } catch (classUpdateError) {
+        console.error('Error updating class roster:', classUpdateError);
+        // Don't fail the user creation if class roster update fails
+        // The user still has the classId reference
+      }
+    }
 
     sendSuccessResponse(res, { 
       user: userResponse,
@@ -438,8 +774,11 @@ router.put('/:id',
       status,
       matricMarks,
       matricTotal,
+      academicBackground, // Add academic background support
       enquiryLevel,
-      admissionInfo
+      admissionInfo,
+      coordinatorGrade, // For coordinator role assignment
+      coordinatorCampus // For coordinator role assignment
     } = req.body;
 
     // Get current user to check if email is changing
@@ -488,10 +827,64 @@ router.put('/:id',
     if (matricMarks !== undefined && matricMarks !== '' && !isNaN(matricMarks)) updateData.matricMarks = Number(matricMarks);
     if (matricTotal !== undefined && matricTotal !== '' && !isNaN(matricTotal)) updateData.matricTotal = Number(matricTotal);
 
+    // Handle academic background update (maps to academicRecords in the model)
+    if (academicBackground && typeof academicBackground === 'object') {
+      updateData.academicRecords = {
+        lastUpdatedOn: new Date()
+      };
+
+      // Process matriculation data
+      if (academicBackground.matriculation) {
+        const matric = academicBackground.matriculation;
+        updateData.academicRecords.matriculation = {
+          percentage: matric.percentage ? Number(matric.percentage) : undefined,
+          passingYear: matric.passingYear ? Number(matric.passingYear) : undefined,
+          board: matric.board || undefined,
+          subjects: Array.isArray(matric.subjects) ? matric.subjects.map(subject => ({
+            name: subject.name,
+            totalMarks: Number(subject.totalMarks) || 0,
+            obtainedMarks: Number(subject.obtainedMarks) || 0,
+            percentage: subject.totalMarks > 0 ? 
+              ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0
+          })).filter(subject => subject.name && subject.totalMarks > 0) : []
+        };
+      }
+
+      // Process intermediate data (map to previousGrade in the model)
+      if (academicBackground.intermediate) {
+        const inter = academicBackground.intermediate;
+        updateData.academicRecords.previousGrade = {
+          grade: '11th', // Default since intermediate is 11th/12th
+          percentage: inter.percentage ? Number(inter.percentage) : undefined,
+          academicYear: inter.passingYear ? `${inter.passingYear-1}-${inter.passingYear}` : undefined,
+          subjects: Array.isArray(inter.subjects) ? inter.subjects.map(subject => ({
+            name: subject.name,
+            totalMarks: Number(subject.totalMarks) || 0,
+            obtainedMarks: Number(subject.obtainedMarks) || 0,
+            percentage: subject.totalMarks > 0 ? 
+              ((Number(subject.obtainedMarks) / Number(subject.totalMarks)) * 100).toFixed(2) : 0,
+            term: 'Annual' // Default term
+          })).filter(subject => subject.name && subject.totalMarks > 0) : []
+        };
+      }
+    }
+
     // Handle enquiry level and admission info
     if (enquiryLevel !== undefined) {
-      updateData.enquiryLevel = parseInt(enquiryLevel);
-      updateData.prospectusStage = parseInt(enquiryLevel); // Keep both in sync
+      const newLevel = parseInt(enquiryLevel);
+      const oldLevel = currentUser.enquiryLevel || currentUser.prospectusStage;
+      
+      updateData.enquiryLevel = newLevel;
+      updateData.prospectusStage = newLevel; // Keep both in sync
+      
+      // Set updatedBy information for level history tracking
+      updateData._updatedBy = req.user._id;
+      updateData._updatedByName = `${req.user.fullName?.firstName || ''} ${req.user.fullName?.lastName || ''}`.trim() || req.user.userName;
+      
+      // If level is being decreased, set the reason
+      if (newLevel < oldLevel && req.body.decrementReason) {
+        updateData._decrementReason = req.body.decrementReason;
+      }
     }
     if (admissionInfo) {
       updateData.admissionInfo = admissionInfo;
@@ -520,6 +913,15 @@ router.put('/:id',
         emergencyContact: typeof emergencyContact === 'string' ? 
           { name: emergencyContact, relationship: '', phone: '' } : 
           emergencyContact
+      };
+    }
+
+    // Handle coordinator assignment if provided
+    const normalizedRole = role ? normalizeRole(role) : currentUser.role;
+    if (normalizedRole === 'Coordinator' && coordinatorGrade && coordinatorCampus) {
+      updateData.coordinatorAssignment = {
+        grade: coordinatorGrade,
+        campus: coordinatorCampus
       };
     }
 
@@ -971,5 +1373,28 @@ router.put('/:id/enquiry-level', asyncHandler(async (req, res) => {
 
   sendSuccessResponse(res, { user: userResponse }, 'Enquiry level updated successfully');
 }));
+
+// Helper function to generate roll numbers
+async function generateRollNumber(classId, classDoc) {
+  // Get the highest roll number in the class
+  const lastStudent = await User.findOne({
+    classId: classId,
+    role: 'Student',
+    rollNumber: { $exists: true, $ne: null }
+  }).sort({ rollNumber: -1 });
+
+  let nextRollNumber;
+  if (lastStudent && lastStudent.rollNumber) {
+    // Extract numeric part and increment
+    const match = lastStudent.rollNumber.match(/(\d+)$/);
+    const lastNumber = match ? parseInt(match[1]) : 0;
+    nextRollNumber = `${classDoc.name.replace(/\s+/g, '')}-${String(lastNumber + 1).padStart(3, '0')}`;
+  } else {
+    // First student in class
+    nextRollNumber = `${classDoc.name.replace(/\s+/g, '')}-001`;
+  }
+
+  return nextRollNumber;
+}
 
 module.exports = router;

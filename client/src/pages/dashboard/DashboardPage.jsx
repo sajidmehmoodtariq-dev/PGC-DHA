@@ -7,7 +7,7 @@ import UnifiedDashboard from './UnifiedDashboard';
  */
 const DashboardPage = () => {
   return (
-    <div className="min-h-screen max-w-[90vw] mx-auto bg-gray-50 rounded-2xl">
+    <div className="min-h-screen max-w-[100vw] mx-auto bg-gray-50 rounded-2xl">
       <div className="p-6">
         <UnifiedDashboard />
       </div>

@@ -25,66 +25,124 @@ const EnquiryStatistics = ({ config }) => {
     const fetchStatistics = async () => {
       setLoading(true);
       try {
-        const response = await api.get('/students');
-        // Extract the actual data array from the API response
-        const enquiries = response.data?.data || response.data || [];
+        // Use level history API for accurate tracking
+        const response = await api.get('/enquiries/level-history-data');
         
-        // Apply role-based filtering if configured
-        let filteredEnquiries = enquiries;
-        if (config.levelRestrictions && config.levelRestrictions.length > 0) {
-          filteredEnquiries = enquiries.filter(enquiry => 
-            config.levelRestrictions.includes(enquiry.prospectusStage || enquiry.enquiryLevel)
-          );
-        }
-        
-        // Calculate statistics
-        const total = filteredEnquiries.length;
-        const byLevel = {};
-        
-        ENQUIRY_LEVELS.forEach(level => {
-          if (!config.levelRestrictions || config.levelRestrictions.includes(level.id)) {
-            byLevel[level.id] = filteredEnquiries.filter(enquiry => 
-              (enquiry.prospectusStage || enquiry.enquiryLevel) === level.id
-            ).length;
+        if (response.data.success) {
+          const data = response.data.data;
+          
+          // Calculate statistics from level history data
+          const total = data.totalEnquiries;
+          const byLevel = {};
+          
+          ENQUIRY_LEVELS.forEach(level => {
+            if (!config.levelRestrictions || config.levelRestrictions.includes(level.id)) {
+              byLevel[level.id] = data.levelBreakdown[`level${level.id}`] || 0;
+            }
+          });
+          
+          setStatistics({
+            total,
+            byLevel,
+            recentTrend: data.recentTrend || 0
+          });
+        } else {
+          // Fallback: if level history API fails, use students API
+          const fallbackResponse = await api.get('/students');
+          const enquiries = fallbackResponse.data?.data || fallbackResponse.data || [];
+          
+          // Apply role-based filtering if configured
+          let filteredEnquiries = enquiries;
+          if (config.levelRestrictions && config.levelRestrictions.length > 0) {
+            filteredEnquiries = enquiries.filter(enquiry => 
+              config.levelRestrictions.includes(enquiry.prospectusStage || enquiry.enquiryLevel)
+            );
           }
-        });
-        
-        // Calculate recent trend (last 7 days vs previous 7 days)
-        const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-        
-        const recentEnquiries = filteredEnquiries.filter(enquiry => {
-          const createdDate = new Date(enquiry.createdOn || enquiry.dateCreated);
-          return createdDate >= sevenDaysAgo;
-        }).length;
-        
-        const previousEnquiries = filteredEnquiries.filter(enquiry => {
-          const createdDate = new Date(enquiry.createdOn || enquiry.dateCreated);
-          return createdDate >= fourteenDaysAgo && createdDate < sevenDaysAgo;
-        }).length;
-        
-        const recentTrend = previousEnquiries > 0 ? 
-          ((recentEnquiries - previousEnquiries) / previousEnquiries) * 100 : 0;
-        
-        setStatistics({
-          total,
-          byLevel,
-          recentTrend
-        });
+          
+          // Calculate statistics
+          const total = filteredEnquiries.length;
+          const byLevel = {};
+          
+          ENQUIRY_LEVELS.forEach(level => {
+            if (!config.levelRestrictions || config.levelRestrictions.includes(level.id)) {
+              byLevel[level.id] = filteredEnquiries.filter(enquiry => 
+                (enquiry.prospectusStage || enquiry.enquiryLevel) === level.id
+              ).length;
+            }
+          });
+          
+          // Calculate recent trend (last 7 days vs previous 7 days)
+          const now = new Date();
+          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+          
+          const recentEnquiries = filteredEnquiries.filter(enquiry => {
+            const createdDate = new Date(enquiry.createdOn || enquiry.dateCreated);
+            return createdDate >= sevenDaysAgo;
+          }).length;
+          
+          const previousEnquiries = filteredEnquiries.filter(enquiry => {
+            const createdDate = new Date(enquiry.createdOn || enquiry.dateCreated);
+            return createdDate >= fourteenDaysAgo && createdDate < sevenDaysAgo;
+          }).length;
+          
+          const recentTrend = previousEnquiries > 0 ? 
+            ((recentEnquiries - previousEnquiries) / previousEnquiries) * 100 : 0;
+          
+          setStatistics({
+            total,
+            byLevel,
+            recentTrend
+          });
+        }
       } catch (error) {
         console.error('Error fetching enquiry statistics:', error);
-        setStatistics({
-          total: 0,
-          byLevel: {},
-          recentTrend: 0
-        });
+        // Try fallback to students API if level history fails
+        try {
+          const fallbackResponse = await api.get('/students');
+          const enquiries = fallbackResponse.data?.data || fallbackResponse.data || [];
+          
+          // Apply role-based filtering if configured
+          let filteredEnquiries = enquiries;
+          if (config.levelRestrictions && config.levelRestrictions.length > 0) {
+            filteredEnquiries = enquiries.filter(enquiry => 
+              config.levelRestrictions.includes(enquiry.prospectusStage || enquiry.enquiryLevel)
+            );
+          }
+          
+          // Calculate statistics
+          const total = filteredEnquiries.length;
+          const byLevel = {};
+          
+          ENQUIRY_LEVELS.forEach(level => {
+            if (!config.levelRestrictions || config.levelRestrictions.includes(level.id)) {
+              byLevel[level.id] = filteredEnquiries.filter(enquiry => 
+                (enquiry.prospectusStage || enquiry.enquiryLevel) === level.id
+              ).length;
+            }
+          });
+          
+          setStatistics({
+            total,
+            byLevel,
+            recentTrend: 0
+          });
+        } catch (fallbackError) {
+          console.error('Fallback API also failed:', fallbackError);
+          setStatistics({
+            total: 0,
+            byLevel: {},
+            recentTrend: 0
+          });
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStatistics();
+    if (config) {
+      fetchStatistics();
+    }
   }, [config]);
 
   const getVisibleLevels = () => {

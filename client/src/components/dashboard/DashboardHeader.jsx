@@ -52,28 +52,28 @@ const DashboardHeader = ({
   const { title: displayTitle, subtitle: displaySubtitle } = getRoleSpecificContent();
 
   return (
-    <div className="relative bg-white/60 backdrop-blur-2xl rounded-3xl shadow-2xl border border-border p-8 transition-all duration-300 hover:shadow-[0_20px_64px_0_rgba(26,35,126,0.18)] group" 
+    <div className="relative bg-white/60 backdrop-blur-2xl rounded-2xl sm:rounded-3xl shadow-2xl border border-border p-4 sm:p-6 lg:p-8 transition-all duration-300 hover:shadow-[0_20px_64px_0_rgba(26,35,126,0.18)] group" 
          style={{boxShadow: '0 12px 48px 0 rgba(26,35,126,0.13)'}}>
       {/* Animated gradient bar at the top */}
-      <span className="absolute top-0 left-8 right-8 h-1 rounded-b-xl bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x" />
+      <span className="absolute top-0 left-4 right-4 sm:left-8 sm:right-8 h-1 rounded-b-xl bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x" />
       
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div className="relative">
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 blur-xl opacity-70" />
-            <div className="relative inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent text-white shadow-lg transition-transform duration-300 hover:scale-105 hover:shadow-2xl">
-              <School className="h-8 w-8 animate-float" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
+        <div className="flex items-center gap-3 sm:gap-6 min-w-0 flex-1">
+          <div className="relative flex-shrink-0">
+            <div className="absolute inset-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 blur-xl opacity-70" />
+            <div className="relative inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary to-accent text-white shadow-lg transition-transform duration-300 hover:scale-105 hover:shadow-2xl">
+              <School className="h-6 w-6 sm:h-8 sm:w-8 animate-float" />
             </div>
           </div>
-          <div>
-            <h2 className="text-3xl font-extrabold text-primary mb-1 tracking-tight font-[Sora,Inter,sans-serif] drop-shadow-sm">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-primary mb-1 tracking-tight font-[Sora,Inter,sans-serif] drop-shadow-sm truncate">
               {displayTitle}
             </h2>
-            <p className="text-primary/80 font-[Inter,sans-serif]">
+            <p className="text-sm sm:text-base text-primary/80 font-[Inter,sans-serif] truncate">
               {displaySubtitle}
             </p>
             {dashboardData.lastUpdated && (
-              <p className="text-sm text-muted-foreground mt-1 font-[Inter,sans-serif]">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 font-[Inter,sans-serif] truncate">
                 Last updated: {dashboardData.lastUpdated.toLocaleString()}
               </p>
             )}
@@ -81,16 +81,17 @@ const DashboardHeader = ({
         </div>
         
         {onRefresh && (
-          <div className="relative">
-            <span className="absolute inset-0 rounded-xl p-[2px] bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x blur-sm opacity-70 pointer-events-none" />
+          <div className="relative flex-shrink-0">
+            <span className="absolute inset-0 rounded-lg sm:rounded-xl p-[2px] bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x blur-sm opacity-70 pointer-events-none" />
             <button
               onClick={onRefresh}
               disabled={loading}
-              className="relative z-10 px-5 py-3 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-bold shadow-lg hover:from-accent hover:to-primary hover:scale-[1.04] active:scale-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 animate-float-btn"
+              className="relative z-10 w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg sm:rounded-xl font-bold shadow-lg hover:from-accent hover:to-primary hover:scale-[1.04] active:scale-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 animate-float-btn text-sm sm:text-base"
               style={{boxShadow: '0 6px 32px 0 rgba(26,35,126,0.13)'}}
             >
-              <TrendingUp className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-              {loading ? 'Refreshing...' : 'Refresh Data'}
+              <TrendingUp className={`h-4 w-4 sm:h-5 sm:w-5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{loading ? 'Refreshing...' : 'Refresh Data'}</span>
+              <span className="sm:hidden">{loading ? 'Refreshing...' : 'Refresh'}</span>
             </button>
           </div>
         )}

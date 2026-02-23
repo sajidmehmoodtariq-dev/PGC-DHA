@@ -26,19 +26,19 @@ export const PROGRAMS = [
     shortLabel: 'Pre Medical'
   },
   {
-    value: 'F.A',
-    label: 'F.A (Faculty of Arts)',
-    shortLabel: 'F.A'
+    value: 'FA',
+    label: 'FA (Faculty of Arts)',
+    shortLabel: 'FA'
   },
   {
-    value: 'FA IT',
-    label: 'FA IT (Faculty of Arts - Information Technology)',
-    shortLabel: 'FA IT'
+    value: 'FSc',
+    label: 'FSc (Faculty of Science)',
+    shortLabel: 'FSc'
   },
   {
-    value: 'General Science',
-    label: 'General Science',
-    shortLabel: 'General Science'
+    value: 'Commerce',
+    label: 'Commerce',
+    shortLabel: 'Commerce'
   }
 ];
 

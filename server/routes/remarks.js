@@ -27,7 +27,7 @@ router.post('/add-remark', authenticate, async (req, res) => {
     // Add remark to student's record
     const remarkData = {
       remark,
-      receptionistId: req.user.id,
+      receptionistId: req.user._id,
       receptionistName: `${req.user.fullName?.firstName || ''} ${req.user.fullName?.lastName || ''}`.trim() || 'Receptionist',
       timestamp: new Date()
     };

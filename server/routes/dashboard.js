@@ -31,6 +31,7 @@ router.get('/today-stats', asyncHandler(async (req, res) => {
   // Get today's enquiries (new registrations)
   const todayEnquiries = await User.countDocuments({
     role: 'Student',
+    status: { $ne: 3 }, // Exclude deleted users
     $or: [
       { createdOn: { $gte: today, $lt: tomorrow } },
       { createdAt: { $gte: today, $lt: tomorrow } },
@@ -40,7 +41,8 @@ router.get('/today-stats', asyncHandler(async (req, res) => {
 
   // Get most recent enquiry
   const recentEnquiry = await User.findOne({
-    role: 'Student'
+    role: 'Student',
+    status: { $ne: 3 } // Exclude deleted users
   }).sort({ createdAt: -1 }).select('fullName createdAt');
 
   res.json({
@@ -68,12 +70,15 @@ router.get('/stats', asyncHandler(async (req, res) => {
   }
 
   // Get user statistics
-  const totalUsers = await User.countDocuments();
-  const activeUsers = await User.countDocuments({ isActive: true });
-  const pendingApprovals = await User.countDocuments({ isApproved: false });
+  const totalUsers = await User.countDocuments({ status: { $ne: 3 } }); // Exclude deleted users
+  const activeUsers = await User.countDocuments({ isActive: true, status: { $ne: 3 } }); // Exclude deleted users
+  const pendingApprovals = await User.countDocuments({ isApproved: false, status: { $ne: 3 } }); // Exclude deleted users
   
   // Get users by role
   const usersByRole = await User.aggregate([
+    {
+      $match: { status: { $ne: 3 } } // Exclude deleted users
+    },
     {
       $group: {
         _id: '$role',
@@ -92,7 +97,8 @@ router.get('/stats', asyncHandler(async (req, res) => {
   // Get recent registrations (last 7 days)
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const recentRegistrations = await User.countDocuments({
-    createdAt: { $gte: sevenDaysAgo }
+    createdAt: { $gte: sevenDaysAgo },
+    status: { $ne: 3 } // Exclude deleted users
   });
 
   // System health metrics
@@ -137,7 +143,7 @@ router.get('/activity', asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   
   // Get recent user registrations
-  const recentUsers = await User.find({}, {
+  const recentUsers = await User.find({ status: { $ne: 3 } }, { // Exclude deleted users
     fullName: 1,
     email: 1,
     role: 1,

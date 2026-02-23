@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Clock, User, BookOpen, Calendar, Trash2, GripVertical } from 'lucide-react';
+import { X, Plus, Clock, User, BookOpen, Calendar, Trash2, GripVertical, Save, CheckCircle, Edit } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -7,27 +7,52 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 
-const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTimetable }) => {
+const DAYS_OF_WEEK = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
+];
+
+const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose }) => {
   const [selectedClass, setSelectedClass] = useState('');
   const [weekSchedule, setWeekSchedule] = useState({});
   const [errors, setErrors] = useState({});
+  const [savedDays, setSavedDays] = useState(new Set()); // Track which days have been saved
+  const [savingDay, setSavingDay] = useState(null); // Track which day is currently being saved
 
-  const daysOfWeek = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
-  ];
+  const daysOfWeek = DAYS_OF_WEEK;
 
-  const timeSlots = [
-    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
-    '16:00', '16:30', '17:00', '17:30', '18:00'
-  ];
+  // Use native time input for minute-level precision
 
   const lectureTypes = ['Theory', 'Practical', 'Lab', 'Tutorial', 'Seminar'];
+  
+  // Standard subjects for consistency
+  const subjects = [
+    'Mathematics',
+    'Physics', 
+    'Chemistry',
+    'Biology',
+    'Computer Science',
+    'English',
+    'Urdu',
+    'Islamic Studies',
+    'Pakistan Studies',
+    'Accounting',
+    'Business Studies',
+    'Economics',
+    'Banking',
+    'Commercial Geography',
+    'Statistics',
+    'Psychology', 
+    'Sociology',
+    'History',
+    'Geography',
+    'Physical Education',
+    'Ethics'
+  ];
 
   useEffect(() => {
     // Initialize empty schedule for all days
     const initialSchedule = {};
-    daysOfWeek.forEach(day => {
+    DAYS_OF_WEEK.forEach(day => {
       initialSchedule[day] = [];
     });
     setWeekSchedule(initialSchedule);
@@ -117,57 +142,93 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
     }));
   };
 
-  const validateForm = () => {
+  const validateDay = (day) => {
     const newErrors = {};
-
+    
     if (!selectedClass) {
       newErrors.class = 'Please select a class';
     }
 
-    const activeDays = Object.keys(weekSchedule).filter(day => weekSchedule[day].length > 0);
-    if (activeDays.length === 0) {
-      newErrors.schedule = 'Please add at least one day with lectures';
+    const lectures = weekSchedule[day] || [];
+    if (lectures.length === 0) {
+      newErrors[`${day}_schedule`] = 'Please add at least one lecture for this day';
     }
 
-    // Validate each lecture
-    activeDays.forEach(day => {
-      weekSchedule[day].forEach((lecture, index) => {
-        if (!lecture.lectureName.trim()) {
-          newErrors[`${day}_${lecture.id}_name`] = 'Lecture name is required';
-        }
-        if (!lecture.startTime) {
-          newErrors[`${day}_${lecture.id}_time`] = 'Start time is required';
-        }
-        if (!lecture.teacherId) {
-          newErrors[`${day}_${lecture.id}_teacher`] = 'Teacher is required';
-        }
-      });
+    // Validate each lecture for this day
+    lectures.forEach((lecture) => {
+      if (!lecture.lectureName.trim()) {
+        newErrors[`${day}_${lecture.id}_name`] = 'Lecture name is required';
+      }
+      if (!lecture.startTime) {
+        newErrors[`${day}_${lecture.id}_time`] = 'Start time is required';
+      }
+      if (!lecture.teacherId) {
+        newErrors[`${day}_${lecture.id}_teacher`] = 'Teacher is required';
+      }
     });
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   };
 
-  const handleSubmit = () => {
-    if (!validateForm()) return;
+  const handleDaySave = async (day) => {
+    const dayErrors = validateDay(day);
+    
+    if (Object.keys(dayErrors).length > 0) {
+      setErrors(prev => ({ ...prev, ...dayErrors }));
+      return;
+    }
 
-    // Transform the nested structure to the expected format
-    const allLectures = [];
-    Object.entries(weekSchedule).forEach(([day, lectures]) => {
-      lectures.forEach(lecture => {
-        allLectures.push({
-          ...lecture,
-          dayOfWeek: day
-        });
+    // Clear errors for this day
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      Object.keys(newErrors).forEach(key => {
+        if (key.startsWith(day)) {
+          delete newErrors[key];
+        }
       });
+      return newErrors;
     });
 
-    const formData = {
-      classId: selectedClass,
-      lectures: allLectures
-    };
+    setSavingDay(day);
 
-    onSubmit(formData);
+    try {
+      // Transform the day's lectures to the expected format
+      const dayLectures = weekSchedule[day].map(lecture => ({
+        ...lecture,
+        dayOfWeek: day
+      }));
+
+      const formData = {
+        classId: selectedClass,
+        lectures: dayLectures
+      };
+
+      await onSubmit(formData);
+      
+      // Mark this day as saved and disable its button
+      setSavedDays(prev => new Set([...prev, day]));
+      
+      // Success - day was saved successfully
+      console.log(`${day} saved successfully`);
+      
+    } catch (error) {
+      console.error(`Error saving ${day}:`, error);
+      // Only show error if it's a real error, not just form staying open
+      if (error.message && !error.message.includes('form')) {
+        // Handle actual save errors here if needed
+      }
+    } finally {
+      setSavingDay(null);
+    }
+  };
+
+  const handleEditDay = (day) => {
+    // Remove day from saved list to allow editing again
+    setSavedDays(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(day);
+      return newSet;
+    });
   };
 
   const getTotalLectures = () => {
@@ -306,6 +367,11 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
                                 <Calendar className="h-5 w-5 text-blue-500" />
                                 {day}
                                 <Badge variant="secondary">{lectures.length} lectures</Badge>
+                                {savedDays.has(day) && (
+                                  <Badge variant="default" className="bg-green-500 text-white">
+                                    Saved ✓
+                                  </Badge>
+                                )}
                               </CardTitle>
                               <div className="flex gap-2">
                                 <Button
@@ -328,30 +394,32 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
                             </div>
                             
                             {/* Copy from previous day option */}
-                            {previousDay && lectures.length === 0 && (
+                            {previousDay && (
                               <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center space-x-2">
-                                    <input
-                                      type="checkbox"
-                                      id={`copy-${day}`}
-                                      className="h-4 w-4 text-blue-600 rounded"
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          copyFromPreviousDay(day, previousDay);
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        copyFromPreviousDay(day, previousDay);
+                                        // If this day was saved, mark it as unsaved since we're changing it
+                                        if (savedDays.has(day)) {
+                                          handleEditDay(day);
                                         }
                                       }}
-                                    />
-                                    <label htmlFor={`copy-${day}`} className="text-sm font-medium text-blue-800">
-                                      Same as {previousDay}
-                                    </label>
+                                      className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                                    >
+                                      <Clock className="h-4 w-4 mr-1" />
+                                      Copy from {previousDay}
+                                    </Button>
                                   </div>
                                   <Badge variant="outline" className="text-blue-700 border-blue-300">
                                     {weekSchedule[previousDay]?.length || 0} lectures
                                   </Badge>
                                 </div>
                                 <p className="text-xs text-blue-600 mt-1">
-                                  Copy all lectures from {previousDay} to {day}
+                                  Copy all lectures from {previousDay} to {day}, then edit as needed
                                 </p>
                               </div>
                             )}
@@ -390,11 +458,19 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
                                       {/* Subject */}
                                       <div>
                                         <Label>Subject</Label>
-                                        <Input
-                                          value={lecture.subject}
-                                          onChange={(e) => updateLecture(day, lecture.id, 'subject', e.target.value)}
-                                          placeholder="e.g., Algebra"
-                                        />
+                                        <Select 
+                                          value={lecture.subject} 
+                                          onValueChange={(value) => updateLecture(day, lecture.id, 'subject', value)}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Select subject" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {subjects.map(subject => (
+                                              <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
                                       </div>
 
                                       {/* Lecture Type */}
@@ -420,21 +496,13 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
                                       {/* Start Time */}
                                       <div>
                                         <Label>Start Time *</Label>
-                                        <Select 
-                                          value={lecture.startTime} 
-                                          onValueChange={(value) => updateLecture(day, lecture.id, 'startTime', value)}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue placeholder="Select time" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {timeSlots.map(time => (
-                                              <SelectItem key={time} value={time}>
-                                                {time}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <input
+                                          type="time"
+                                          step="60"
+                                          value={lecture.startTime}
+                                          onChange={(e) => updateLecture(day, lecture.id, 'startTime', e.target.value)}
+                                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                        />
                                         {errors[`${day}_${lecture.id}_time`] && (
                                           <p className="text-sm text-red-500 mt-1">{errors[`${day}_${lecture.id}_time`]}</p>
                                         )}
@@ -504,6 +572,54 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
                                   </CardContent>
                                 </Card>
                               ))}
+                              
+                              {/* Day Save Button */}
+                              {lectures.length > 0 && (
+                                <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                                  {savedDays.has(day) && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleEditDay(day)}
+                                      className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                                    >
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit {day}
+                                    </Button>
+                                  )}
+                                  <Button
+                                    onClick={() => handleDaySave(day)}
+                                    disabled={savedDays.has(day) || savingDay === day || !selectedClass}
+                                    className={`${
+                                      savedDays.has(day) 
+                                        ? 'bg-green-500 hover:bg-green-600 cursor-not-allowed' 
+                                        : 'bg-blue-500 hover:bg-blue-600'
+                                    } ${savedDays.has(day) ? '' : 'ml-auto'}`}
+                                  >
+                                    {savingDay === day ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                        Saving...
+                                      </>
+                                    ) : savedDays.has(day) ? (
+                                      <>
+                                        <CheckCircle className="h-4 w-4 mr-2" />
+                                        Saved ✓
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Save className="h-4 w-4 mr-2" />
+                                        Save {day}
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                              
+                              {/* Error for this day */}
+                              {errors[`${day}_schedule`] && (
+                                <p className="text-sm text-red-500 mt-2">{errors[`${day}_schedule`]}</p>
+                              )}
                             </div>
                           </CardContent>
                         </Card>
@@ -521,17 +637,21 @@ const EnhancedTimetableForm = ({ classes, teachers, onSubmit, onClose, editingTi
         <div className="border-t bg-gray-50 px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="text-sm text-gray-600 text-center sm:text-left">
             {getTotalLectures() > 0 && (
-              <span>
-                {getTotalLectures()} lectures across {getActiveDays().length} days
-              </span>
+              <div className="space-y-1">
+                <div>
+                  {getTotalLectures()} lectures across {getActiveDays().length} days
+                </div>
+                {savedDays.size > 0 && (
+                  <div className="text-green-600 font-medium">
+                    {savedDays.size} day{savedDays.size !== 1 ? 's' : ''} saved: {Array.from(savedDays).join(', ')}
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
             <Button variant="outline" onClick={onClose} className="flex-1 sm:flex-initial">
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={!selectedClass || getTotalLectures() === 0} className="flex-1 sm:flex-initial">
-              Create Timetable
+              Close
             </Button>
           </div>
         </div>

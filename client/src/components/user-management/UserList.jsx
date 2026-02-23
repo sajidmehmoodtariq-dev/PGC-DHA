@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Users,
   UserPlus,
@@ -44,8 +44,18 @@ const UserList = ({
   const { toast } = useToast();
   const { userRole, can } = usePermissions();
 
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Pagination & data states
+  const [loading, setLoading] = useState(true); // initial page load only
+  const [pagesData, setPagesData] = useState({}); // { [page]: array }
+  const [pagesLoading, setPagesLoading] = useState({}); // { [page]: boolean }
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  
+  // Use ref to track loading states without causing re-renders
+  const loadingStatesRef = useRef({});
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState(defaultFilter);
   const [filterStatus, setFilterStatus] = useState('');
@@ -57,7 +67,7 @@ const UserList = ({
   const [error, setError] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 4000);
+  const debouncedSearchTerm = useDebounce(searchTerm, 400);
   // Track if search is pending (user typed but debounce hasn't fired yet)
   const isSearchPending = searchTerm !== debouncedSearchTerm;
 
@@ -122,77 +132,116 @@ const UserList = ({
 
   const statusOptions = getStatusOptions();
 
-  // Load users with role-based filtering
-  const loadUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      const params = {
-        search: debouncedSearchTerm,
-        role: filterRole,
-        status: filterStatus,
-        limit: 1000 // Show all users by default
-      };
-
-      // Apply userType-based filtering
-      if (userType === 'student') {
-        // Student management - only show students
-        params.role = params.role || 'Student';
-      } else {
-        // Regular user management - exclude students
-        params.excludeRole = 'Student';
+  // Build immutable fetch params based on current filters
+  const queryParams = useMemo(() => {
+    const p = {};
+    
+    // For student management, show all students (both assigned and unassigned)
+    if (userType === 'student') {
+      p.role = 'Student';
+    } else {
+      // For regular user management, exclude students
+      p.excludeRole = 'Student';
+      if (filterRole) {
+        p.role = filterRole;
       }
-
-      // Apply role-based filtering for backwards compatibility
-      if (allowedRoles.includes('Student') && allowedRoles.length === 1) {
-        // Receptionist - only students (this overrides the excludeRole)
-        params.role = params.role || 'Student';
-        delete params.excludeRole;
-      } else if (!allowedRoles.includes('all') && userType !== 'student') {
-        // IT or other limited roles
-        params.allowedRoles = allowedRoles.join(',');
-      }
-
-      console.log('Loading users with params:', params);
-      const response = await userAPI.getUsers(params);
-      console.log('Users API response:', response);
-
-      if (response.success) {
-        let userData = response.data.users || [];
-
-        // Client-side filtering as backup
-        if (userType === 'student') {
-          // Student management - only show students
-          userData = userData.filter(user => user.role === 'Student');
-        } else {
-          // Regular user management - exclude students
-          userData = userData.filter(user => user.role !== 'Student');
-          
-          // Further filter by allowed roles if not 'all'
-          if (!allowedRoles.includes('all')) {
-            userData = userData.filter(user => allowedRoles.includes(user.role));
-          }
-        }
-
-        setUsers(userData);
-      } else {
-        const errorMessage = userType === 'student' ? 'Failed to load students' : 'Failed to load users';
-        setError(response.message || errorMessage);
-        console.error('Failed to load users:', response.message);
-      }
-    } catch (err) {
-      const errorMessage = userType === 'student' ? 'Failed to load students. Please try again.' : 'Failed to load users. Please try again.';
-      setError(errorMessage);
-      console.error('Load users error:', err);
-    } finally {
-      setLoading(false);
     }
-  }, [debouncedSearchTerm, filterRole, filterStatus, allowedRoles, userType]);
+    
+    if (filterStatus) {
+      p.status = filterStatus;
+    }
+    if (debouncedSearchTerm?.trim()) {
+      p.search = debouncedSearchTerm.trim();
+    }
+    return p;
+  }, [debouncedSearchTerm, filterRole, filterStatus, userType]);
 
+  const fetchPage = useCallback(async (pageToFetch) => {
+    // Check and set loading state using ref to prevent circular dependencies
+    if (loadingStatesRef.current[pageToFetch]) return; // Already loading
+    loadingStatesRef.current[pageToFetch] = true;
+    
+    setPagesLoading(prev => ({ ...prev, [pageToFetch]: true }));
+    
+    try {
+      const params = {
+        ...queryParams,
+        page: pageToFetch,
+        limit: pageSize,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      };
+      const response = await userAPI.getUsers(params);
+      const data = response.data?.users || [];
+      const pagination = response.data?.pagination;
+      
+      setPagesData(prev => ({ ...prev, [pageToFetch]: data }));
+      if (pagination) {
+        setTotalUsers(pagination.totalUsers || 0);
+        setTotalPages(pagination.totalPages || 1);
+      }
+    } catch (error) {
+      console.error('Error fetching users page:', pageToFetch, error);
+      setPagesData(prev => ({ ...prev, [pageToFetch]: [] }));
+      setError('Failed to load users. Please try again.');
+    } finally {
+      loadingStatesRef.current[pageToFetch] = false;
+      setPagesLoading(prev => ({ ...prev, [pageToFetch]: false }));
+    }
+  }, [queryParams, pageSize]);
+
+  const prefetchPages = useCallback(async (start, end) => {
+    const promises = [];
+    for (let p = start; p <= end; p++) {
+      promises.push(fetchPage(p));
+    }
+    await Promise.all(promises);
+  }, [fetchPage]);
+
+  // Manual refresh handler
+  const refreshUsers = useCallback(async () => {
+    // Keep current filters; reset cached pages and prefetch window around current page
+    setPagesData({});
+    setPagesLoading({});
+    loadingStatesRef.current = {}; // Clear ref loading states too
+    const start = Math.max(1, currentPage);
+    const end = Math.min(start + 2, totalPages || start + 2);
+    await prefetchPages(start, end);
+  }, [currentPage, totalPages, prefetchPages]);
+
+  // Initial and filter-driven load: prefetch pages 1-3, show spinner until page 1 is ready
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    let isMounted = true;
+    // Reset state on filter change
+    setPagesData({});
+    setPagesLoading({});
+    loadingStatesRef.current = {}; // Clear ref loading states too
+    setCurrentPage(1);
+    setTotalUsers(0);
+    setTotalPages(1);
+    setLoading(true);
+    (async () => {
+      await prefetchPages(1, 3);
+      if (!isMounted) return;
+      setLoading(false); // page 1 should be ready or at least requested
+    })();
+    return () => { isMounted = false; };
+  }, [queryParams, pageSize, prefetchPages]);
+
+  // Prefetch next 3 pages when user reaches page 2 or beyond
+  useEffect(() => {
+    if (currentPage >= 2) {
+      const start = currentPage + 1;
+      const end = Math.min(currentPage + 3, totalPages || currentPage + 3);
+      if (start <= end) {
+        prefetchPages(start, end);
+      }
+    }
+  }, [currentPage, totalPages, prefetchPages]);
+
+  // Get current page data
+  const currentPageData = pagesData[currentPage] || [];
+  const isCurrentPageLoading = pagesLoading[currentPage] || false;
 
   // Update filter when defaultFilter changes
   useEffect(() => {
@@ -200,13 +249,6 @@ const UserList = ({
       setFilterRole(defaultFilter);
     }
   }, [defaultFilter, filterRole]);
-
-  // Update filter when defaultFilter changes
-  useEffect(() => {
-    if (defaultFilter) {
-      setFilterRole(defaultFilter);
-    }
-  }, [defaultFilter]);
 
   // Handle user actions based on permissions
   const handleAddUser = () => {
@@ -256,7 +298,7 @@ const UserList = ({
       const response = await userAPI.deleteUser(selectedUser._id);
       if (response.success) {
         toast.success('User deleted successfully');
-        loadUsers();
+        refreshUsers();
       } else {
         toast.error(response.message || 'Failed to delete user');
       }
@@ -270,7 +312,7 @@ const UserList = ({
         // window.location.href = '/login';
       } else if (error.response?.status === 404) {
         toast.error('User not found. They may have already been deleted.');
-        loadUsers(); // Refresh the list
+        refreshUsers(); // Refresh the list
       } else if (error.response?.status === 400) {
         toast.error(error.response?.data?.message || 'Cannot delete user');
       } else {
@@ -302,19 +344,22 @@ const UserList = ({
     );
   };
 
-  // Export users to Excel
+  // Export users to Excel (from currently loaded pages)
   const handleExportUsers = () => {
-    if (users.length === 0) {
+    // Collect all users from loaded pages
+    const allLoadedUsers = Object.values(pagesData).flat();
+    
+    if (allLoadedUsers.length === 0) {
       toast.error('No users to export');
       return;
     }
 
-    const isStudentOnly = allowedRoles.includes('Student') && allowedRoles.length === 1;
+    const isStudentOnly = userType === 'student';
 
     let excelData;
     if (isStudentOnly) {
       // Student-specific export with all fields
-      excelData = users.map((user, idx) => ({
+      excelData = allLoadedUsers.map((user, idx) => ({
         '#': idx + 1,
         'Student Name': user.firstName || '',
         'Father Name': user.fatherName || '',
@@ -333,7 +378,7 @@ const UserList = ({
       }));
     } else {
       // General user export
-      excelData = users.map((user, idx) => ({
+      excelData = allLoadedUsers.map((user, idx) => ({
         '#': idx + 1,
         'First Name': user.firstName || '',
         'Last Name': user.lastName || '',
@@ -428,7 +473,7 @@ const UserList = ({
 
         <div className="flex items-center gap-2">
           <Button
-            onClick={loadUsers}
+            onClick={refreshUsers}
             variant="outline"
             className="flex items-center gap-2"
             disabled={loading}
@@ -528,12 +573,12 @@ const UserList = ({
 
       {/* Users Table */}
       <div className="overflow-x-auto relative">
-        {(loading && users.length > 0) && (
+        {(loading || isCurrentPageLoading) && (
           <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow-sm">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <span className="text-sm text-gray-600">
-                {userType === 'student' ? 'Updating students...' : 'Updating users...'}
+                {userType === 'student' ? 'Loading students...' : 'Loading users...'}
               </span>
             </div>
           </div>
@@ -542,9 +587,9 @@ const UserList = ({
           <thead>
             <tr className="border-b border-gray-200">
               <th className="text-left py-3 px-4 font-semibold text-gray-700">
-                {allowedRoles.includes('Student') && allowedRoles.length === 1 ? 'Student' : 'User'}
+                {userType === 'student' ? 'Student' : 'User'}
               </th>
-              {allowedRoles.includes('Student') && allowedRoles.length === 1 ? (
+              {userType === 'student' ? (
                 <>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Program</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Gender</th>
@@ -561,8 +606,8 @@ const UserList = ({
             </tr>
           </thead>
           <tbody>
-            {users.length > 0 ? (
-              users.map((user) => (
+            {currentPageData.length > 0 ? (
+              currentPageData.map((user) => (
                 <tr key={user._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
@@ -684,6 +729,58 @@ const UserList = ({
         </table>
       </div>
 
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border border-gray-200 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Page {currentPage} of {totalPages}</span>
+            <span className="text-gray-400">•</span>
+            <span>{totalUsers} total {userType === 'student' ? 'students' : 'users'}</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1 || loading}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            
+            {/* Page Numbers */}
+            <div className="flex items-center gap-1">
+              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                const pageNum = Math.max(1, Math.min(currentPage - 2, totalPages - 4)) + i;
+                if (pageNum > totalPages) return null;
+                
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    disabled={loading}
+                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      currentPage === pageNum
+                        ? 'bg-primary text-white'
+                        : 'border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || loading}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* User Modal */}
       {showUserModal && (
         <UserForm
@@ -699,7 +796,7 @@ const UserList = ({
           onSave={() => {
             setShowUserModal(false);
             setSelectedUser(null);
-            loadUsers();
+            refreshUsers();
           }}
         />
       )}
@@ -721,7 +818,7 @@ const UserList = ({
           onClose={() => setShowImportModal(false)}
           onSuccess={() => {
             setShowImportModal(false);
-            loadUsers(); // Refresh the user list after import
+            refreshUsers(); // Refresh the user list after import
             toast.success('Students imported successfully!');
           }}
         />

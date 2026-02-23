@@ -64,7 +64,7 @@ const StatsCards = ({
   ];
 
   return (
-    <div className="grid grid-cols-3 gap-6 mb-8">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
       {cards.map((card) => {
         const IconComponent = card.icon;
         
@@ -73,32 +73,32 @@ const StatsCards = ({
             key={card.title}
             onClick={() => !loading && onCardClick(card.view, card.gender)}
             className={`
-              bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer transform transition-all duration-200 hover:scale-105 hover:shadow-xl
-              ${card.isActive ? 'ring-4 ring-blue-500 ring-opacity-50' : ''}
+              bg-white rounded-lg sm:rounded-xl shadow-lg overflow-hidden cursor-pointer transform transition-all duration-200 hover:scale-105 hover:shadow-xl
+              ${card.isActive ? 'ring-2 sm:ring-4 ring-blue-500 ring-opacity-50' : ''}
               ${loading ? 'opacity-50 cursor-not-allowed' : ''}
             `}
           >
-            <div className={`bg-gradient-to-r ${card.color} p-6 text-white`}>
+            <div className={`bg-gradient-to-r ${card.color} p-3 sm:p-4 lg:p-6 text-white`}>
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-semibold opacity-90">{card.title}</p>
-                  <p className="text-3xl font-bold">{card.value.toLocaleString()}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm sm:text-base lg:text-lg font-semibold opacity-90 truncate">{card.title}</p>
+                  <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{card.value.toLocaleString()}</p>
                   {card.percentage !== undefined && (
-                    <p className="text-sm opacity-90 mt-1">
+                    <p className="text-xs sm:text-sm opacity-90 mt-1">
                       {card.percentage.toFixed(1)}% of total
                     </p>
                   )}
                   {card.nonProgressed > 0 && parseInt(selectedLevel) > 1 && (
-                    <p className="text-sm opacity-90 mt-1 bg-red-500 bg-opacity-20 px-2 py-1 rounded">
+                    <p className="text-xs sm:text-sm opacity-90 mt-1 bg-red-500 bg-opacity-20 px-2 py-1 rounded">
                       {card.nonProgressed.toLocaleString()} did not progress
                     </p>
                   )}
                 </div>
-                <IconComponent className="w-12 h-12 opacity-80" />
+                <IconComponent className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 opacity-80 flex-shrink-0 ml-2" />
               </div>
             </div>
-            <div className="p-4 bg-gray-50">
-              <p className="text-sm text-gray-600 text-center">
+            <div className="p-2 sm:p-3 lg:p-4 bg-gray-50">
+              <p className="text-xs sm:text-sm text-gray-600 text-center leading-tight">
                 Click to {card.isActive ? 'view program breakdown' : 'view program distribution'}
               </p>
             </div>
@@ -109,4 +109,4 @@ const StatsCards = ({
   );
 };
 
-export default StatsCards;
+export default React.memo(StatsCards);

@@ -83,7 +83,7 @@ const UnifiedDashboard = () => {
   const shouldShowAdditionalSections = userRole === 'InstituteAdmin';
 
   return (
-    <div className="space-y-8">
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6 lg:space-y-8">
       {/* Header */}
       <DashboardHeader
         dashboardData={dashboardData}
@@ -103,7 +103,7 @@ const UnifiedDashboard = () => {
 
       {/* Additional Sections for Admin Roles */}
       {shouldShowAdditionalSections && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
           {/* Recent Activities */}
           <RecentActivities
             dashboardData={dashboardData}
@@ -120,7 +120,7 @@ const UnifiedDashboard = () => {
 
       {/* Role Debug Info (only in development) */}
       {import.meta.env.DEV && (
-        <div className="bg-gray-100 p-4 rounded-lg text-xs text-gray-600">
+        <div className="bg-gray-100 p-3 sm:p-4 rounded-lg text-xs text-gray-600">
           <strong>Debug Info:</strong> Role: {userRole} | Cards: {enhancedCards.length} | Additional Sections: {shouldShowAdditionalSections}
         </div>
       )}

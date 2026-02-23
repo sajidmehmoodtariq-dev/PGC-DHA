@@ -199,6 +199,7 @@ TimetableSchema.statics.getFloorTimetable = function(floor, dayOfWeek) {
         endTime: 1,
         subject: 1,
         lectureType: 1,
+        'class._id': 1,
         'class.name': 1,
         'class.grade': 1,
         'class.campus': 1,
@@ -213,19 +214,15 @@ TimetableSchema.statics.getFloorTimetable = function(floor, dayOfWeek) {
 
 // Method to check for time conflicts
 TimetableSchema.methods.hasTimeConflict = async function() {
+  // Use $and to combine participant overlap (teacher or class) with time overlap.
+  // Previous implementation mistakenly had two $or keys, causing one to overwrite the other.
   const conflicts = await this.constructor.find({
     _id: { $ne: this._id },
-    $or: [
-      { teacherId: this.teacherId }, // Same teacher
-      { classId: this.classId }      // Same class
-    ],
     dayOfWeek: this.dayOfWeek,
     isActive: true,
-    $or: [
-      {
-        startTime: { $lt: this.endTime },
-        endTime: { $gt: this.startTime }
-      }
+    $and: [
+      { $or: [ { teacherId: this.teacherId }, { classId: this.classId } ] },
+      { startTime: { $lt: this.endTime }, endTime: { $gt: this.startTime } }
     ]
   }).populate('teacherId classId');
   

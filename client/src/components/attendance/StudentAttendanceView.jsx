@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useApiWithToast } from '../../hooks/useApiWithToast';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import api from '../../services/api';
 import { 
   Users, 
   UserCheck, 
@@ -10,11 +10,12 @@ import {
   Search,
   Filter,
   Download,
-  RefreshCw
+  RefreshCw,
+  UserX,
+  ChevronDown
 } from 'lucide-react';
 
 const StudentAttendanceView = ({ user }) => {
-  const { callApi } = useApiWithToast();
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState(null);
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -22,11 +23,41 @@ const StudentAttendanceView = ({ user }) => {
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [leaveDropdownOpen, setLeaveDropdownOpen] = useState(null);
+  const dropdownRef = useRef(null);
 
-  // Load classes that user has access to
-  useEffect(() => {
-    loadAccessibleClasses();
-  }, [loadAccessibleClasses]);
+  // Helper functions for time validation
+  const isToday = (dateString) => {
+    const today = new Date().toISOString().split('T')[0];
+    return dateString === today;
+  };
+
+  const isWithinCollegeHours = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = currentHour * 60 + currentMinute;
+    
+    // College hours: 8:00 AM to 6:00 PM (8 * 60 = 480 minutes, 18 * 60 = 1080 minutes)
+    const startTime = 8 * 60; // 8:00 AM
+    const endTime = 18 * 60;  // 6:00 PM
+    
+    return currentTime >= startTime && currentTime <= endTime;
+  };
+
+  const canMarkAttendance = () => {
+    return isToday(attendanceDate) && isWithinCollegeHours();
+  };
+
+  const getAttendanceMessage = () => {
+    if (!isToday(attendanceDate)) {
+      return "Attendance can only be marked for today's date.";
+    }
+    if (!isWithinCollegeHours()) {
+      return "Attendance can only be marked during college hours (8:00 AM - 6:00 PM).";
+    }
+    return null;
+  };
 
   const loadAccessibleClasses = useCallback(async () => {
     try {
@@ -35,26 +66,26 @@ const StudentAttendanceView = ({ user }) => {
       let endpoint = '';
       if (user?.role === 'InstituteAdmin' || user?.role === 'IT') {
         // Institute Admin can see all classes
-        endpoint = '/api/classes';
+        endpoint = '/classes';
       } else if (user?.role === 'Teacher') {
-        // Teachers can only see classes where they are classIncharge or assigned as teachers
-        endpoint = `/api/classes/teacher-access/${user.id}`;
+        // Teachers can only see classes where they have attendance access
+        endpoint = `/classes/attendance-access/${user._id}`;
       } else {
         // No access for other roles
         setClasses([]);
         return;
       }
       
-      const response = await callApi(endpoint, 'GET');
-      if (response.success) {
-        const accessibleClasses = response.data || [];
+      const response = await api.get(endpoint);
+      if (response.data.success) {
+        const accessibleClasses = response.data.classes || response.data.data || [];
         
         // Filter classes based on role responsibility
         let filteredClasses = accessibleClasses;
         if (user?.role === 'Teacher') {
           // Only show classes where user is classIncharge for student attendance
           filteredClasses = accessibleClasses.filter(cls => 
-            cls.classIncharge?._id === user.id || cls.classIncharge === user.id
+            cls.userRole === 'Class Incharge'
           );
         }
         
@@ -68,45 +99,49 @@ const StudentAttendanceView = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  }, [user, callApi]);
+  }, [user]);
 
-  // Load students for selected class
+  // Load classes that user has access to
   useEffect(() => {
-    if (selectedClass) {
-      loadStudents();
-      loadExistingAttendance();
-    }
-  }, [selectedClass, attendanceDate, loadStudents, loadExistingAttendance]);
+    loadAccessibleClasses();
+  }, [loadAccessibleClasses]);
 
   const loadStudents = useCallback(async () => {
     if (!selectedClass) return;
     
     try {
       setLoading(true);
-      const response = await callApi(`/api/classes/${selectedClass._id}/students`, 'GET');
-      if (response.success) {
-        setStudents(response.data || []);
+      const response = await api.get(`/classes/${selectedClass._id}/students`);
+      if (response.data.success) {
+        const studentsData = response.data.data?.students || [];
+        setStudents(Array.isArray(studentsData) ? studentsData : []);
+      } else {
+        setStudents([]);
       }
     } catch (error) {
       console.error('Error loading students:', error);
+      setStudents([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedClass, callApi]);
+  }, [selectedClass]);
 
   const loadExistingAttendance = useCallback(async () => {
     if (!selectedClass) return;
     
     try {
-      const response = await callApi(`/api/attendance/class/${selectedClass._id}/date/${attendanceDate}`, 'GET');
-      if (response.success && response.data) {
+      const response = await api.get(`/attendance/class/${selectedClass._id}/${attendanceDate}`);
+      if (response.data.success && response.data.attendance) {
         const attendanceMap = {};
-        response.data.forEach(record => {
-          attendanceMap[record.student._id] = {
-            status: record.status,
-            markedAt: record.markedAt,
-            markedBy: record.markedBy
-          };
+        response.data.attendance.forEach(record => {
+          if (record.studentId) {
+            attendanceMap[record.studentId] = {
+              status: record.status,
+              markedAt: record.markedAt,
+              markedBy: record.markedBy,
+              marked: record.marked
+            };
+          }
         });
         setAttendance(attendanceMap);
       } else {
@@ -116,26 +151,40 @@ const StudentAttendanceView = ({ user }) => {
       console.error('Error loading attendance:', error);
       setAttendance({});
     }
-  }, [selectedClass, attendanceDate, callApi]);
+  }, [selectedClass, attendanceDate]);
+
+  // Load students for selected class
+  useEffect(() => {
+    if (selectedClass) {
+      loadStudents();
+      loadExistingAttendance();
+    }
+  }, [selectedClass, attendanceDate, loadStudents, loadExistingAttendance]);
 
   const markAttendance = async (studentId, status) => {
+    // Check if attendance can be marked
+    if (!canMarkAttendance()) {
+      alert(getAttendanceMessage());
+      return;
+    }
+
     try {
       setSaving(true);
-      const response = await callApi('/api/attendance/mark', 'POST', {
+      const response = await api.post('/attendance/mark', {
         studentId,
         classId: selectedClass._id,
         date: attendanceDate,
         status,
-        markedBy: user.id
+        markedBy: user._id
       });
 
-      if (response.success) {
+      if (response.data.success) {
         setAttendance(prev => ({
           ...prev,
           [studentId]: {
             status,
             markedAt: new Date().toISOString(),
-            markedBy: user.id
+            markedBy: user._id
           }
         }));
       }
@@ -152,7 +201,7 @@ const StudentAttendanceView = ({ user }) => {
       const unmarkedStudents = students.filter(student => !attendance[student._id]);
       
       for (const student of unmarkedStudents) {
-        await markAttendance(student._id, 'present');
+        await markAttendance(student._id, 'Present');
       }
     } catch (error) {
       console.error('Error marking all present:', error);
@@ -164,11 +213,27 @@ const StudentAttendanceView = ({ user }) => {
   const getAttendanceStats = () => {
     const total = students.length;
     const marked = Object.keys(attendance).length;
-    const present = Object.values(attendance).filter(a => a.status === 'present').length;
-    const absent = Object.values(attendance).filter(a => a.status === 'absent').length;
+    const present = Object.values(attendance).filter(a => a.status === 'Present').length;
+    const absent = Object.values(attendance).filter(a => a.status === 'Absent').length;
+    const halfLeave = Object.values(attendance).filter(a => a.status === 'Half Leave').length;
+    const fullLeave = Object.values(attendance).filter(a => a.status === 'Full Leave').length;
     
-    return { total, marked, present, absent, unmarked: total - marked };
+    return { total, marked, present, absent, halfLeave, fullLeave, unmarked: total - marked };
   };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setLeaveDropdownOpen(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const stats = getAttendanceStats();
 
@@ -243,10 +308,25 @@ const StudentAttendanceView = ({ user }) => {
             <input
               type="date"
               value={attendanceDate}
-              onChange={(e) => setAttendanceDate(e.target.value)}
+              onChange={(e) => {
+                const selectedDate = e.target.value;
+                const today = new Date().toISOString().split('T')[0];
+                if (selectedDate !== today) {
+                  alert('Attendance can only be marked for today\'s date. Date has been reset to today.');
+                  setAttendanceDate(today);
+                } else {
+                  setAttendanceDate(selectedDate);
+                }
+              }}
+              min={new Date().toISOString().split('T')[0]}
               max={new Date().toISOString().split('T')[0]}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            {!isToday(attendanceDate) && (
+              <p className="text-xs text-red-600 mt-1">
+                Attendance can only be marked for today's date.
+              </p>
+            )}
           </div>
 
           {/* Quick Actions */}
@@ -264,7 +344,7 @@ const StudentAttendanceView = ({ user }) => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-blue-600" />
@@ -289,6 +369,22 @@ const StudentAttendanceView = ({ user }) => {
           <p className="text-2xl font-bold text-red-900 mt-1">{stats.absent}</p>
         </div>
         
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-purple-600" />
+            <span className="text-sm font-medium text-purple-900">Half Leave</span>
+          </div>
+          <p className="text-2xl font-bold text-purple-900 mt-1">{stats.halfLeave}</p>
+        </div>
+        
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <UserX className="h-5 w-5 text-indigo-600" />
+            <span className="text-sm font-medium text-indigo-900">Full Leave</span>
+          </div>
+          <p className="text-2xl font-bold text-indigo-900 mt-1">{stats.fullLeave}</p>
+        </div>
+        
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-orange-600" />
@@ -298,17 +394,35 @@ const StudentAttendanceView = ({ user }) => {
         </div>
       </div>
 
-      {/* Students List */}
+              {/* Time Restriction Warning */}
+        {!isWithinCollegeHours() && isToday(attendanceDate) && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-yellow-600" />
+              <div>
+                <h3 className="font-medium text-yellow-800">Outside College Hours</h3>
+                <p className="text-sm text-yellow-700">
+                  Attendance can only be marked during college hours (8:00 AM - 6:00 PM).
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Students List */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="p-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">Students ({students.length})</h3>
         </div>
         
         <div className="divide-y divide-gray-200">
-          {students.map((student) => {
+          {Array.isArray(students) && students.map((student) => {
             const studentAttendance = attendance[student._id];
             const isMarked = !!studentAttendance;
-            const isPresent = studentAttendance?.status === 'present';
+            const isPresent = studentAttendance?.status === 'Present';
+            const isOnHalfLeave = studentAttendance?.status === 'Half Leave';
+            const isOnFullLeave = studentAttendance?.status === 'Full Leave';
+            const isOnLeave = isOnHalfLeave || isOnFullLeave;
             
             return (
               <div key={student._id} className="p-4 hover:bg-gray-50">
@@ -316,46 +430,103 @@ const StudentAttendanceView = ({ user }) => {
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
                       <span className="text-sm font-medium text-gray-700">
-                        {student.name?.charAt(0)?.toUpperCase() || 'S'}
+                        {student.fullName?.firstName?.charAt(0)?.toUpperCase() || 'S'}
                       </span>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{student.name || 'Unknown Student'}</p>
+                      <p className="font-medium text-gray-900">
+                        {student.fullName?.firstName && student.fullName?.lastName 
+                          ? `${student.fullName.firstName} ${student.fullName.lastName}`
+                          : 'Unknown Student'
+                        }
+                      </p>
                       <p className="text-sm text-gray-600">Roll: {student.rollNumber || 'N/A'}</p>
+                      {isOnLeave && (
+                        <p className="text-xs text-purple-600">
+                          {isOnHalfLeave ? 'Half Leave' : 'Full Leave'}
+                        </p>
+                      )}
                     </div>
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {isMarked && (
+                    {isMarked && studentAttendance.markedAt && (
                       <span className="text-xs text-gray-500">
-                        {new Date(studentAttendance.markedAt).toLocaleTimeString()}
+                        {new Date(studentAttendance.markedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </span>
                     )}
                     
                     <div className="flex gap-2">
                       <button
-                        onClick={() => markAttendance(student._id, 'present')}
-                        disabled={saving}
+                        onClick={() => markAttendance(student._id, 'Present')}
+                        disabled={saving || !canMarkAttendance()}
                         className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                          isPresent
-                            ? 'bg-green-100 text-green-800 border border-green-200'
-                            : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-green-50 hover:text-green-700'
+                          !canMarkAttendance() 
+                            ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                            : isPresent
+                              ? 'bg-green-100 text-green-800 border border-green-200'
+                              : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-green-50 hover:text-green-700'
                         }`}
                       >
                         <CheckCircle className="h-4 w-4" />
                       </button>
                       
                       <button
-                        onClick={() => markAttendance(student._id, 'absent')}
-                        disabled={saving}
+                        onClick={() => markAttendance(student._id, 'Absent')}
+                        disabled={saving || !canMarkAttendance()}
                         className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                          isMarked && !isPresent
-                            ? 'bg-red-100 text-red-800 border border-red-200'
-                            : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-red-50 hover:text-red-700'
+                          !canMarkAttendance()
+                            ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                            : isMarked && !isPresent && !isOnLeave
+                              ? 'bg-red-100 text-red-800 border border-red-200'
+                              : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-red-50 hover:text-red-700'
                         }`}
                       >
                         <XCircle className="h-4 w-4" />
                       </button>
+                      
+                      <div className="relative" ref={leaveDropdownOpen === student._id ? dropdownRef : null}>
+                        <button
+                          onClick={() => {
+                            if (!canMarkAttendance() || saving) return;
+                            setLeaveDropdownOpen(leaveDropdownOpen === student._id ? null : student._id);
+                          }}
+                          disabled={saving || !canMarkAttendance()}
+                          className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                            !canMarkAttendance()
+                              ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                              : isOnLeave
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-purple-50 hover:text-purple-700'
+                          }`}
+                        >
+                          <UserX className="h-4 w-4" />
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                        
+                        {leaveDropdownOpen === student._id && canMarkAttendance() && (
+                          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px]">
+                            <button
+                              onClick={() => {
+                                markAttendance(student._id, 'Half Leave');
+                                setLeaveDropdownOpen(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-purple-50 hover:text-purple-700 first:rounded-t-lg"
+                            >
+                              Half Leave
+                            </button>
+                            <button
+                              onClick={() => {
+                                markAttendance(student._id, 'Full Leave');
+                                setLeaveDropdownOpen(null);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-purple-50 hover:text-purple-700 last:rounded-b-lg border-t border-gray-100"
+                            >
+                              Full Leave
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

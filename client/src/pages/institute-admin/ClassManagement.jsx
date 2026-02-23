@@ -64,8 +64,9 @@ const ClassManagement = () => {
 
   const loadStudents = useCallback(async () => {
     try {
-      const response = await api.get('/users?role=Student&enquiryLevel=5');
-      setStudents(response.data.users || []);
+      // Fetch students with class assignments (for student management)
+      const response = await api.get('/students?includeAssigned=true');
+      setStudents(response.data.data || []);
     } catch (error) {
       toast.error('Failed to load students');
       console.error('Error loading students:', error);
@@ -439,7 +440,7 @@ const ClassManagement = () => {
                   <option value="ICOM">ICOM (Commerce)</option>
                   <option value="Pre Engineering">Pre Engineering</option>
                   <option value="Pre Medical">Pre Medical</option>
-                  <option value="F.A">F.A (Faculty of Arts)</option>
+                  <option value="FA">FA (Faculty of Arts)</option>
                   <option value="FA IT">FA IT (Faculty of Arts - Information Technology)</option>
                   <option value="General Science">General Science</option>
                 </select>
@@ -454,7 +455,7 @@ const ClassManagement = () => {
                   value={classForm.maxStudents}
                   onChange={(e) => setClassForm(prev => ({ ...prev, maxStudents: parseInt(e.target.value) }))}
                   min="1"
-                  max="100"
+                  max="120"
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -525,7 +526,7 @@ const ClassManagement = () => {
                   <option value="ICOM">ICOM (Commerce)</option>
                   <option value="Pre Engineering">Pre Engineering</option>
                   <option value="Pre Medical">Pre Medical</option>
-                  <option value="F.A">F.A (Faculty of Arts)</option>
+                  <option value="FA">FA (Faculty of Arts)</option>
                   <option value="FA IT">FA IT (Faculty of Arts - Information Technology)</option>
                   <option value="General Science">General Science</option>
                 </select>
@@ -540,7 +541,7 @@ const ClassManagement = () => {
                   value={classForm.maxStudents}
                   onChange={(e) => setClassForm(prev => ({ ...prev, maxStudents: parseInt(e.target.value) }))}
                   min="1"
-                  max="100"
+                  max="120"
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>

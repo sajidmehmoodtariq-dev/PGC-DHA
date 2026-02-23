@@ -121,4 +121,4 @@ const CorrespondenceStatsCards = ({ stats, onCardClick, loading }) => {
   );
 };
 
-export default CorrespondenceStatsCards;
+export default React.memo(CorrespondenceStatsCards);

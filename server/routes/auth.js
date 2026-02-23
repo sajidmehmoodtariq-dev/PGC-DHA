@@ -94,6 +94,11 @@ router.post('/register', asyncHandler(async (req, res) => {
  */
 router.post('/login', asyncHandler(async (req, res) => {
   const { login, password } = req.body;
+  
+  if (!login || !password) {
+    throw new AppError('Login and password are required', 400, 'MISSING_CREDENTIALS');
+  }
+  
   const userAgent = req.headers['user-agent'] || 'Unknown';
   const ipAddress = req.ip || req.connection.remoteAddress;
 
@@ -169,12 +174,14 @@ router.post('/refresh', asyncHandler(async (req, res) => {
   }
 
   try {
-    const tokenData = await jwtService.refreshTokenPair(refreshToken);
+    const tokenData = await jwtService.refreshAccessToken(refreshToken, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
     
     sendSuccessResponse(res, {
       tokens: {
         accessToken: tokenData.accessToken,
-        refreshToken: tokenData.refreshToken,
         expiresIn: tokenData.expiresIn
       },
       message: 'Token refreshed successfully'

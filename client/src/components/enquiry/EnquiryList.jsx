@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, Filter, User, Mail, Phone, Clock, XCircle, CheckCircle, Eye, Settings, CalendarDays, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import PermissionGuard from '../PermissionGuard';
@@ -11,9 +11,18 @@ import { ENQUIRY_LEVELS, getLevelInfo } from '../../constants/enquiryLevels';
 import { useDebounce } from '../../hooks/usePerformance';
 
 const EnquiryList = ({ config }) => {
-  const [enquiries, setEnquiries] = useState([]);
-  const [filteredEnquiries, setFilteredEnquiries] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Pagination & data states
+  const [loading, setLoading] = useState(true); // initial page load only
+  const [pagesData, setPagesData] = useState({}); // { [page]: array }
+  const [pagesLoading, setPagesLoading] = useState({}); // { [page]: boolean }
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalDocs, setTotalDocs] = useState(0);
+  
+  // Use ref to track loading states without causing re-renders
+  const loadingStatesRef = useRef({});
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevel, setFilterLevel] = useState('');
   const [filterGender, setFilterGender] = useState('');
@@ -41,63 +50,133 @@ const EnquiryList = ({ config }) => {
     { value: 'custom', label: 'Custom Range' }
   ];
 
-  const fetchEnquiries = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Build query parameters
-      const params = new URLSearchParams();
-      
-      // Add date filter parameters (only if not custom, or if custom and dates are applied)
-      if (selectedDate !== 'all' && selectedDate !== 'custom') {
-        params.append('dateFilter', selectedDate);
-      } else if (selectedDate === 'custom' && customStartDate && customEndDate && customDatesApplied) {
-        params.append('dateFilter', 'custom');
-        params.append('startDate', customStartDate);
-        params.append('endDate', customEndDate);
-      }
-      
-      // Add non-progression filter parameters
-      if (showNonProgression && progressionLevel) {
-        params.append('nonProgression', 'true');
-        params.append('progressionLevel', progressionLevel);
-      }
-      
-      const queryString = params.toString();
-      const url = queryString ? `/students?${queryString}` : '/students';
-      
-      const response = await api.get(url);
-      // Extract the actual data array from the API response
-      const enquiriesData = response.data?.data || response.data || [];
-      
-      // Apply role-based filtering if configured
-      let filteredData = enquiriesData;
-      if (config.levelRestrictions && config.levelRestrictions.length > 0) {
-        filteredData = enquiriesData.filter(enquiry => 
-          config.levelRestrictions.includes(enquiry.prospectusStage || enquiry.enquiryLevel)
-        );
-      }
-      
-      setEnquiries(filteredData);
-    } catch (error) {
-      console.error('Error fetching enquiries:', error);
-      setEnquiries([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [config, selectedDate, customStartDate, customEndDate, customDatesApplied, showNonProgression, progressionLevel]);
-
-  useEffect(() => {
-    fetchEnquiries();
-  }, [fetchEnquiries]);
-
-  // Only trigger refetch when custom dates are applied (not on date input changes)
-  useEffect(() => {
-    if (selectedDate === 'custom' && customDatesApplied) {
-      // This will trigger fetchEnquiries through the dependency in the useCallback
-    }
-  }, [customDatesApplied, selectedDate]);
-
   const debouncedSearchTerm = useDebounce(searchTerm, 400);
+
+  // Build immutable fetch params based on current filters
+  const queryParams = useMemo(() => {
+    const p = {
+      assignmentFilter: 'unassigned' // Show only unassigned students for enquiry management
+    };
+    // Date filter
+    if (selectedDate !== 'all' && selectedDate !== 'custom') {
+      p.dateFilter = selectedDate;
+    } else if (selectedDate === 'custom' && customStartDate && customEndDate && customDatesApplied) {
+      p.dateFilter = 'custom';
+      p.startDate = customStartDate;
+      p.endDate = customEndDate;
+    }
+    // Non-progression
+    if (showNonProgression && progressionLevel) {
+      p.nonProgression = 'true';
+      p.progressionLevel = progressionLevel;
+    } else {
+      // Level filters (cumulative in normal mode)
+      if (filterLevel) {
+        p.minLevel = filterLevel;
+      }
+      // Gender filter
+      if (filterGender) {
+        p.gender = filterGender;
+      }
+    }
+    // Search
+    if (debouncedSearchTerm?.trim()) {
+      p.search = debouncedSearchTerm.trim();
+    }
+    return p;
+  }, [selectedDate, customStartDate, customEndDate, customDatesApplied, showNonProgression, progressionLevel, filterLevel, filterGender, debouncedSearchTerm]);
+
+  // Helper to apply role restrictions on a page (non-breaking)
+  const applyRoleRestrictions = useCallback((items) => {
+    if (config?.levelRestrictions && config.levelRestrictions.length > 0) {
+      return items.filter(enquiry => 
+        config.levelRestrictions.includes(enquiry.prospectusStage || enquiry.enquiryLevel)
+      );
+    }
+    return items;
+  }, [config]);
+
+  const fetchPage = useCallback(async (pageToFetch) => {
+    // Check and set loading state using ref to prevent circular dependencies
+    if (loadingStatesRef.current[pageToFetch]) return; // Already loading
+    loadingStatesRef.current[pageToFetch] = true;
+    
+    setPagesLoading(prev => ({ ...prev, [pageToFetch]: true }));
+    
+    try {
+      const params = {
+        ...queryParams,
+        page: pageToFetch,
+        limit: pageSize,
+        sortBy: 'createdOn',
+        sortOrder: 'desc'
+      };
+      const response = await api.get('/students', { params });
+      const data = response.data?.data || [];
+      const pagination = response.data?.pagination;
+      const pageItems = applyRoleRestrictions(data);
+      setPagesData(prev => ({ ...prev, [pageToFetch]: pageItems }));
+      if (pagination) {
+        setTotalDocs(pagination.totalDocs || 0);
+        setTotalPages(pagination.totalPages || 1);
+      }
+    } catch (error) {
+      console.error('Error fetching enquiries page:', pageToFetch, error);
+      setPagesData(prev => ({ ...prev, [pageToFetch]: [] }));
+    } finally {
+      loadingStatesRef.current[pageToFetch] = false;
+      setPagesLoading(prev => ({ ...prev, [pageToFetch]: false }));
+    }
+  }, [queryParams, pageSize, applyRoleRestrictions]);
+
+  const prefetchPages = useCallback(async (start, end) => {
+    const promises = [];
+    for (let p = start; p <= end; p++) {
+      promises.push(fetchPage(p));
+    }
+    await Promise.all(promises);
+  }, [fetchPage]);
+
+  // Manual refresh handler
+  const refreshEnquiries = useCallback(async () => {
+    // Keep current filters; reset cached pages and prefetch window around current page
+    setPagesData({});
+    setPagesLoading({});
+    loadingStatesRef.current = {}; // Clear ref loading states too
+    const start = Math.max(1, currentPage);
+    const end = Math.min(start + 2, totalPages || start + 2);
+    await prefetchPages(start, end);
+  }, [currentPage, totalPages, prefetchPages]);
+
+  // Initial and filter-driven load: prefetch pages 1-3, show spinner until page 1 is ready
+  useEffect(() => {
+    let isMounted = true;
+    // Reset state on filter change
+    setPagesData({});
+    setPagesLoading({});
+    loadingStatesRef.current = {}; // Clear ref loading states too
+    setCurrentPage(1);
+    setTotalDocs(0);
+    setTotalPages(1);
+    setLoading(true);
+    (async () => {
+      await prefetchPages(1, 3);
+      if (!isMounted) return;
+      setLoading(false); // page 1 should be ready or at least requested
+    })();
+    return () => { isMounted = false; };
+  }, [queryParams, pageSize, prefetchPages]);
+
+  // Prefetch next 3 pages when user reaches page 2 or beyond
+  useEffect(() => {
+    if (currentPage >= 2) {
+      const start = currentPage + 1;
+      const end = Math.min(currentPage + 3, totalPages || currentPage + 3);
+      if (start <= end) {
+        prefetchPages(start, end);
+      }
+    }
+  }, [currentPage, totalPages, prefetchPages]);
 
   // Date filter handlers
   const handleDateChange = (dateValue) => {
@@ -137,11 +216,14 @@ const EnquiryList = ({ config }) => {
     setShowNonProgression(newShowNonProgression);
     
     if (newShowNonProgression) {
-      // When enabling non-progression filter, reset level filter to "All Levels"
+      // When enabling non-progression filter, reset level filter to avoid confusion
       setFilterLevel('');
       if (!progressionLevel) {
         setProgressionLevel('2'); // Default to Level 2
       }
+    } else {
+      // When disabling non-progression filter, reset level filter to show cumulative data clearly
+      setFilterLevel('');
     }
   };
 
@@ -149,35 +231,23 @@ const EnquiryList = ({ config }) => {
     setProgressionLevel(level);
   };
 
-  useEffect(() => {
-    let filtered = enquiries;
+  // Current page data (already filtered on server). Apply role restrictions only.
+  const currentPageData = useMemo(() => {
+    const items = pagesData[currentPage] || [];
+    return applyRoleRestrictions(items);
+  }, [pagesData, currentPage, applyRoleRestrictions]);
 
-    // Search filter
-    if (debouncedSearchTerm.trim()) {
-      const searchLower = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(enquiry => {
-        const fullName = `${enquiry.fullName?.firstName || ''} ${enquiry.fullName?.lastName || ''}`.trim();
-        return fullName.toLowerCase().includes(searchLower) ||
-               enquiry.email?.toLowerCase().includes(searchLower) ||
-               enquiry.session?.toLowerCase().includes(searchLower) ||
-               enquiry.cnic?.includes(debouncedSearchTerm);
-      });
+  const isCurrentPageLoading = pagesLoading[currentPage];
+
+  // Helpers for pagination controls
+  const changePage = (p) => {
+    if (p < 1 || (totalPages && p > totalPages)) return;
+    setCurrentPage(p);
+    if (!pagesData[p]) {
+      // If not prefetched, fetch on demand (show loader only for that page)
+      fetchPage(p);
     }
-
-    // Level filter
-    if (filterLevel) {
-      filtered = filtered.filter(enquiry => 
-        (enquiry.prospectusStage || enquiry.enquiryLevel) === parseInt(filterLevel)
-      );
-    }
-
-    // Gender filter
-    if (filterGender) {
-      filtered = filtered.filter(enquiry => enquiry.gender === filterGender);
-    }
-
-    setFilteredEnquiries(filtered);
-  }, [enquiries, debouncedSearchTerm, filterLevel, filterGender]);
+  };
 
   const getStatusIconComponent = (levelId) => {
     switch (levelId) {
@@ -212,19 +282,23 @@ const EnquiryList = ({ config }) => {
         notes: updatedEnquiry.notes || 'Level updated'
       });
 
-      // Update local state
-      setEnquiries(prev => 
-        prev.map(enquiry => 
-          (enquiry._id || enquiry.id) === (updatedEnquiry._id || updatedEnquiry.id) ? updatedEnquiry : enquiry
-        )
-      );
+      // Update item across cached pages
+      setPagesData(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(p => {
+          next[p] = (next[p] || []).map(item =>
+            (item._id || item.id) === (updatedEnquiry._id || updatedEnquiry.id) ? { ...item, ...updatedEnquiry } : item
+          );
+        });
+        return next;
+      });
       
       // Close modals and reset selection
       setShowLevelModal(false);
       setSelectedEnquiry(null);
       
-      // Refresh the list to ensure consistency
-      await fetchEnquiries();
+      // Optionally refetch current page to ensure consistency with server
+      await fetchPage(currentPage);
     } catch (error) {
       console.error('Error updating enquiry level:', error);
       // You might want to show an error toast here
@@ -319,7 +393,7 @@ const EnquiryList = ({ config }) => {
           <div className="relative">
             <span className="absolute inset-0 rounded-xl p-[2px] bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x blur-sm opacity-70 pointer-events-none" />
             <Button
-              onClick={fetchEnquiries}
+              onClick={refreshEnquiries}
               disabled={loading}
               className="relative z-10 px-5 py-3 bg-gradient-to-r from-primary to-accent text-white rounded-xl font-bold shadow-lg hover:from-accent hover:to-primary hover:scale-[1.04] active:scale-100 transition-all duration-200 animate-float-btn disabled:opacity-50 flex items-center gap-2"
               style={{boxShadow: '0 6px 32px 0 rgba(26,35,126,0.13)'}}
@@ -381,7 +455,7 @@ const EnquiryList = ({ config }) => {
         <span className="absolute top-0 left-8 right-8 h-1 rounded-b-xl bg-gradient-to-r from-primary via-accent to-primary animate-gradient-x" />
         <div className="p-6 border-b border-border/20">
           <h2 className="text-2xl font-extrabold text-primary tracking-tight font-[Sora,Inter,sans-serif] drop-shadow-sm">
-            Enquiries ({filteredEnquiries.length})
+            Enquiries ({totalDocs})
           </h2>
         </div>
         
@@ -390,7 +464,7 @@ const EnquiryList = ({ config }) => {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
             <p className="mt-2 text-gray-600">Loading enquiries...</p>
           </div>
-        ) : filteredEnquiries.length === 0 ? (
+        ) : (!isCurrentPageLoading && currentPageData.length === 0) ? (
           <div className="p-8 text-center">
             <p className="text-gray-600">No enquiries found matching your criteria.</p>
           </div>
@@ -409,7 +483,14 @@ const EnquiryList = ({ config }) => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                {filteredEnquiries.map((enquiry) => {
+                {isCurrentPageLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                      <p className="mt-2 text-gray-600">Loading page {currentPage}...</p>
+                    </td>
+                  </tr>
+                ) : currentPageData.map((enquiry) => {
                   const levelInfo = getLevelInfo(enquiry.prospectusStage || enquiry.enquiryLevel || 1);
                   const fullName = `${enquiry.fullName?.firstName || ''} ${enquiry.fullName?.lastName || ''}`.trim();
                   const dateCreated = enquiry.createdOn ? new Date(enquiry.createdOn).toLocaleDateString() : 'N/A';
@@ -481,7 +562,48 @@ const EnquiryList = ({ config }) => {
               </div>
             </div>
           )}
-        </div>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-6 py-4 border-t border-border/20">
+            <div className="text-sm text-gray-600">
+              Page {currentPage} of {Math.max(totalPages, 1)} • {totalDocs} total
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
+                onClick={() => changePage(currentPage - 1)}
+                disabled={currentPage <= 1}
+              >
+                Prev
+              </button>
+              {Array.from({ length: Math.min(5, Math.max(totalPages, 1)) }).map((_, idx) => {
+                // Simple windowed pager: show first 5 or around current
+                let baseStart = Math.max(1, Math.min(currentPage - 2, (totalPages || 1) - 4));
+                if (!totalPages || totalPages < 5) baseStart = 1;
+                const pageNum = baseStart + idx;
+                if (totalPages && pageNum > totalPages) return null;
+                const isActive = pageNum === currentPage;
+                const isPrefetched = !!pagesData[pageNum];
+                return (
+                  <button
+                    key={pageNum}
+                    className={`px-3 py-1 rounded-lg text-sm ${isActive ? 'bg-primary text-white' : 'bg-gray-100 hover:bg-gray-200'} ${!isPrefetched ? 'relative' : ''}`}
+                    onClick={() => changePage(pageNum)}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+              <button
+                className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm"
+                onClick={() => changePage(currentPage + 1)}
+                disabled={totalPages ? currentPage >= totalPages : false}
+              >
+                Next
+              </button>
+            </div>
+          </div>
 
         {/* Level Manager Modal */}
       {showLevelModal && selectedEnquiry && (

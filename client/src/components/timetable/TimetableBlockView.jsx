@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 
-const TimetableBlockView = ({ groupedByClass, canManage, onEdit, onDelete }) => {
+const TimetableBlockView = ({ groupedByClass, canManage, onEdit, onDelete, onDeleteClass }) => {
   const [collapsedClasses, setCollapsedClasses] = useState(new Set());
   
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -104,18 +104,31 @@ const TimetableBlockView = ({ groupedByClass, canManage, onEdit, onDelete }) => 
                     </Badge>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => toggleClassCollapse(classId)}
-                  className="ml-4"
-                >
-                  {isCollapsed ? (
-                    <ChevronDown className="h-5 w-5" />
-                  ) : (
-                    <ChevronUp className="h-5 w-5" />
+                <div className="flex items-center gap-2">
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onDeleteClass && onDeleteClass(classId, group.classInfo.name)}
+                      className="text-xs px-3 py-1 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete All
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleClassCollapse(classId)}
+                    className="ml-2"
+                  >
+                    {isCollapsed ? (
+                      <ChevronDown className="h-5 w-5" />
+                    ) : (
+                      <ChevronUp className="h-5 w-5" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
 

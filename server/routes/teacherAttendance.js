@@ -5,12 +5,13 @@ const Timetable = require('../models/Timetable');
 const Class = require('../models/Class');
 const User = require('../models/User');
 const { authenticate } = require('../middleware/auth');
+const { asyncHandler } = require('../middleware/errorHandler');
 
 // Mark teacher attendance for lectures (by Floor Coordinator)
 router.post('/mark', authenticate, async (req, res) => {
   try {
     const { attendanceData, date, floor } = req.body;
-    const markedBy = req.user.id;
+    const markedBy = req.user._id;
 
     if (!Array.isArray(attendanceData) || attendanceData.length === 0) {
       return res.status(400).json({ message: 'Attendance data is required' });
@@ -20,8 +21,19 @@ router.post('/mark', authenticate, async (req, res) => {
       return res.status(400).json({ message: 'Floor number is required' });
     }
 
-    const attendanceDate = new Date(date || new Date());
-    attendanceDate.setHours(0, 0, 0, 0);
+    // Parse date correctly to avoid timezone issues
+    let attendanceDate;
+    if (date) {
+      const [year, month, day] = date.split('-').map(Number);
+      attendanceDate = new Date();
+      attendanceDate.setFullYear(year);
+      attendanceDate.setMonth(month - 1); // month is 0-indexed
+      attendanceDate.setDate(day);
+      attendanceDate.setHours(0, 0, 0, 0);
+    } else {
+      attendanceDate = new Date();
+      attendanceDate.setHours(0, 0, 0, 0);
+    }
 
     const results = {
       success: [],
@@ -154,6 +166,162 @@ router.post('/mark', authenticate, async (req, res) => {
   }
 });
 
+// Mark multiple teacher attendance records (bulk)
+router.post('/mark-bulk', authenticate, async (req, res) => {
+  try {
+    const { attendanceRecords, date, markedBy } = req.body;
+
+    if (!Array.isArray(attendanceRecords) || attendanceRecords.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Attendance records array is required and cannot be empty' 
+      });
+    }
+
+    // Parse date correctly to avoid timezone issues
+    let attendanceDate;
+    if (date) {
+      const [year, month, day] = date.split('-').map(Number);
+      attendanceDate = new Date();
+      attendanceDate.setFullYear(year);
+      attendanceDate.setMonth(month - 1); // month is 0-indexed
+      attendanceDate.setDate(day);
+      attendanceDate.setHours(0, 0, 0, 0);
+    } else {
+      attendanceDate = new Date();
+      attendanceDate.setHours(0, 0, 0, 0);
+    }
+
+    const results = {
+      success: [],
+      errors: []
+    };
+
+    // Process each attendance record
+    for (const record of attendanceRecords) {
+      try {
+        const {
+          teacherId,
+          timetableId,
+          status,
+          lateMinutes,
+          lateType,
+          coordinatorRemarks
+        } = record;
+
+        console.log('Processing record:', {
+          teacherId: typeof teacherId,
+          timetableId: typeof timetableId,
+          timetableIdValue: timetableId,
+          status
+        });
+
+        // Validate required fields
+        if (!teacherId || !timetableId || !status) {
+          results.errors.push({
+            record,
+            error: 'Teacher ID, timetable ID, and status are required'
+          });
+          continue;
+        }
+
+        // Validate timetable entry exists
+        const timetableEntry = await Timetable.findById(timetableId);
+        if (!timetableEntry) {
+          results.errors.push({
+            record,
+            error: 'Timetable entry not found'
+          });
+          continue;
+        }
+
+        // Get class to determine floor
+        const classDoc = await Class.findById(timetableEntry.classId);
+        if (!classDoc) {
+          results.errors.push({
+            record,
+            error: 'Class not found'
+          });
+          continue;
+        }
+
+        // Prepare attendance data
+        const attendanceRecord = {
+          teacherId,
+          timetableId,
+          classId: timetableEntry.classId,
+          date: attendanceDate,
+          status,
+          subject: timetableEntry.subject,
+          lectureType: timetableEntry.lectureType,
+          markedBy: markedBy || req.user._id,
+          floor: classDoc.floor,
+          coordinatorRemarks: coordinatorRemarks || ''
+        };
+
+        // Handle late status with minutes
+        if (status === 'Late') {
+          if (lateMinutes && lateMinutes > 0) {
+            attendanceRecord.lateMinutes = lateMinutes;
+            attendanceRecord.lateType = lateType || (lateMinutes <= 10 ? `${lateMinutes} min` : 'Custom');
+          } else {
+            results.errors.push({
+              record,
+              error: 'Late minutes are required when status is Late'
+            });
+            continue;
+          }
+        }
+
+        // Update existing or create new record
+        const attendance = await TeacherAttendance.findOneAndUpdate(
+          { teacherId, timetableId, date: attendanceDate },
+          attendanceRecord,
+          { 
+            upsert: true, 
+            new: true,
+            runValidators: true
+          }
+        );
+
+        results.success.push({
+          id: attendance._id,
+          teacherId: attendance.teacherId,
+          status: attendance.status,
+          lateMinutes: attendance.lateMinutes,
+          subject: attendance.subject
+        });
+
+      } catch (error) {
+        console.error(`Error processing attendance record:`, error);
+        results.errors.push({
+          record,
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Bulk attendance processed: ${results.success.length} successful, ${results.errors.length} errors`,
+      data: {
+        successful: results.success.length,
+        errors: results.errors.length,
+        successfulRecords: results.success,
+        errorRecords: results.errors
+      }
+    });
+
+  } catch (error) {
+    console.error('Error processing bulk teacher attendance:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error processing bulk teacher attendance', 
+      error: error.message 
+    });
+  }
+});
+
 // Get teacher attendance for a specific date and floor
 router.get('/floor/:floor/:date', authenticate, async (req, res) => {
   try {
@@ -165,7 +333,13 @@ router.get('/floor/:floor/:date', authenticate, async (req, res) => {
     }
 
     // Get timetable for the floor and date
-    const queryDate = new Date(date);
+    // Parse date correctly to avoid timezone issues
+    const [year, month, day] = date.split('-').map(Number);
+    const queryDate = new Date();
+    queryDate.setFullYear(year);
+    queryDate.setMonth(month - 1); // month is 0-indexed
+    queryDate.setDate(day);
+    queryDate.setHours(0, 0, 0, 0);
     const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][queryDate.getDay()];
     
     // Get all scheduled lectures for this floor and day
@@ -393,6 +567,78 @@ router.get('/report/monthly/:year/:month', authenticate, async (req, res) => {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
+    // Compute late buckets and status breakdown across the month
+    const startDate = new Date(yearNum, monthNum - 1, 1);
+    const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
+    const matchQuery = { date: { $gte: startDate, $lte: endDate } };
+    if (floorNum) matchQuery.floor = floorNum;
+
+    const [bucketSummary] = await TeacherAttendance.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: null,
+          totalLectures: { $sum: 1 },
+          onTime: { $sum: { $cond: [{ $eq: ['$status', 'On Time'] }, 1, 0] } },
+          late5to10: { $sum: { $cond: [{ $and: [ { $eq: ['$status', 'Late'] }, { $gte: ['$lateMinutes', 5] }, { $lte: ['$lateMinutes', 10] } ] }, 1, 0] } },
+          lateOver10: { $sum: { $cond: [{ $and: [ { $eq: ['$status', 'Late'] }, { $gt: ['$lateMinutes', 10] } ] }, 1, 0] } },
+          absent: { $sum: { $cond: [{ $eq: ['$status', 'Absent'] }, 1, 0] } },
+          cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    // Per-teacher late buckets for listing breakdowns
+    const teacherBuckets = await TeacherAttendance.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: '$teacherId',
+          onTime: { $sum: { $cond: [{ $eq: ['$status', 'On Time'] }, 1, 0] } },
+          late5to10: { $sum: { $cond: [{ $and: [ { $eq: ['$status', 'Late'] }, { $gte: ['$lateMinutes', 5] }, { $lte: ['$lateMinutes', 10] } ] }, 1, 0] } },
+          lateOver10: { $sum: { $cond: [{ $and: [ { $eq: ['$status', 'Late'] }, { $gt: ['$lateMinutes', 10] } ] }, 1, 0] } },
+          notAttended: { $sum: { $cond: [{ $eq: ['$status', 'Absent'] }, 1, 0] } },
+          cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    const teacherIdToBuckets = new Map();
+    teacherBuckets.forEach(b => {
+      teacherIdToBuckets.set(b._id.toString(), {
+        onTime: b.onTime || 0,
+        late5to10: b.late5to10 || 0,
+        lateOver10: b.lateOver10 || 0,
+        notAttended: b.notAttended || 0,
+        cancelled: b.cancelled || 0
+      });
+    });
+
+    // Attach breakdown to each teacher in processed report
+    processedReport.forEach(t => {
+      const buckets = teacherIdToBuckets.get(String(t.teacherId)) || {
+        onTime: 0, late5to10: 0, lateOver10: 0, notAttended: 0, cancelled: 0
+      };
+      t.breakdown = buckets;
+    });
+
+    const summaryBase = {
+      totalTeachers: processedReport.length,
+      totalLectures: processedReport.reduce((sum, t) => sum + t.totalLectures, 0),
+      overallPunctuality: processedReport.length > 0 ? 
+        Math.round(processedReport.reduce((sum, t) => sum + t.punctualityPercentage, 0) / processedReport.length) : 0
+    };
+
+    const breakdown = bucketSummary ? {
+      onTime: bucketSummary.onTime || 0,
+      late5to10: bucketSummary.late5to10 || 0,
+      lateOver10: bucketSummary.lateOver10 || 0,
+      notAttended: bucketSummary.absent || 0,
+      cancelled: bucketSummary.cancelled || 0
+    } : {
+      onTime: 0, late5to10: 0, lateOver10: 0, notAttended: 0, cancelled: 0
+    };
+
     res.json({
       success: true,
       report: {
@@ -402,10 +648,8 @@ router.get('/report/monthly/:year/:month', authenticate, async (req, res) => {
         floor: floorNum,
         teachers: processedReport,
         summary: {
-          totalTeachers: processedReport.length,
-          totalLectures: processedReport.reduce((sum, t) => sum + t.totalLectures, 0),
-          overallPunctuality: processedReport.length > 0 ? 
-            Math.round(processedReport.reduce((sum, t) => sum + t.punctualityPercentage, 0) / processedReport.length) : 0
+          ...summaryBase,
+          breakdown
         }
       }
     });
@@ -422,7 +666,12 @@ router.get('/report/daily/:date', authenticate, async (req, res) => {
     const { date } = req.params;
     const { floor } = req.query;
 
-    const queryDate = new Date(date);
+    // Parse date correctly to avoid timezone issues
+    const [year, month, day] = date.split('-').map(Number);
+    const queryDate = new Date();
+    queryDate.setFullYear(year);
+    queryDate.setMonth(month - 1); // month is 0-indexed
+    queryDate.setDate(day);
     queryDate.setHours(0, 0, 0, 0);
 
     let attendanceRecords;
@@ -530,6 +779,184 @@ router.get('/stats/punctuality/:teacherId', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error getting punctuality stats:', error);
     res.status(500).json({ message: 'Error getting punctuality stats', error: error.message });
+  }
+});
+
+// Mark teacher attendance by Coordinator
+router.post('/coordinator/mark', authenticate, async (req, res) => {
+  try {
+    const { attendanceRecords } = req.body;
+    const markedBy = req.user._id;
+
+    if (!Array.isArray(attendanceRecords) || attendanceRecords.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Attendance records are required' 
+      });
+    }
+
+    // Verify user is a coordinator
+    if (req.user.role !== 'Coordinator') {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Only coordinators can use this endpoint' 
+      });
+    }
+
+    const results = {
+      success: [],
+      errors: []
+    };
+
+    // Process each attendance record
+    for (const record of attendanceRecords) {
+      try {
+        const {
+          teacherId,
+          timetableId,
+          status,
+          coordinatorRemarks,
+          date
+        } = record;
+
+        // Validate required fields
+        if (!teacherId || !timetableId || !status || !date) {
+          results.errors.push({
+            record,
+            error: 'Teacher ID, timetable ID, status, and date are required'
+          });
+          continue;
+        }
+
+        // Validate teacher exists
+        const teacher = await User.findById(teacherId);
+        if (!teacher || teacher.role !== 'Teacher') {
+          results.errors.push({
+            record,
+            error: 'Invalid teacher ID'
+          });
+          continue;
+        }
+
+        // Validate timetable entry
+        const timetableEntry = await Timetable.findById(timetableId)
+          .populate('classId', 'name grade campus program floor');
+        if (!timetableEntry) {
+          results.errors.push({
+            record,
+            error: 'Timetable entry not found'
+          });
+          continue;
+        }
+
+        const attendanceDate = new Date(date);
+        attendanceDate.setHours(0, 0, 0, 0);
+
+        // Check if attendance already exists
+        const existingAttendance = await TeacherAttendance.findOne({
+          teacherId,
+          timetableId,
+          date: attendanceDate
+        });
+
+        const attendanceData = {
+          teacherId,
+          timetableId,
+          classId: timetableEntry.classId._id,
+          date: attendanceDate,
+          status,
+          subject: timetableEntry.subject,
+          lectureType: timetableEntry.lectureType || 'Theory',
+          coordinatorRemarks: coordinatorRemarks || '',
+          markedBy,
+          floor: timetableEntry.classId.floor
+        };
+
+        let savedRecord;
+        if (existingAttendance) {
+          // Update existing record
+          Object.assign(existingAttendance, attendanceData);
+          savedRecord = await existingAttendance.save();
+        } else {
+          // Create new record
+          savedRecord = new TeacherAttendance(attendanceData);
+          await savedRecord.save();
+        }
+
+        results.success.push({
+          teacherId,
+          timetableId,
+          status,
+          record: savedRecord._id
+        });
+
+      } catch (error) {
+        results.errors.push({
+          record,
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Processed ${results.success.length} records successfully, ${results.errors.length} errors`,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error marking coordinator attendance:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error marking attendance', 
+      error: error.message 
+    });
+  }
+});
+
+// Get teacher attendance for a specific date (for coordinator view)
+router.get('/date/:date', authenticate, async (req, res) => {
+  try {
+    console.log('GET /date/:date route hit with date:', req.params.date);
+    const { date } = req.params;
+    
+    // Parse date correctly to avoid timezone issues
+    // Input should be in YYYY-MM-DD format
+    console.log('TIMEZONE FIX ACTIVE - Parsing date manually:', date);
+    const [year, month, day] = date.split('-').map(Number);
+    // Create a date that represents the start of the day in local time
+    const queryDate = new Date();
+    queryDate.setFullYear(year);
+    queryDate.setMonth(month - 1); // month is 0-indexed
+    queryDate.setDate(day);
+    queryDate.setHours(0, 0, 0, 0);
+    console.log('TIMEZONE FIX - Parsed date components:', { year, month, day });
+    console.log('TIMEZONE FIX - Final queryDate:', queryDate);
+    
+    console.log('Querying attendance for date:', queryDate);
+    
+    const attendance = await TeacherAttendance.find({
+      date: queryDate
+    })
+    .populate('teacherId', 'name email role')
+    .populate('timetableId')
+    .populate('classId', 'name grade section floor')
+    .sort({ createdAt: -1 });
+
+    console.log('Found attendance records:', attendance.length);
+
+    res.json({
+      success: true,
+      data: attendance
+    });
+
+  } catch (error) {
+    console.error('Error fetching teacher attendance by date:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching attendance data', 
+      error: error.message 
+    });
   }
 });
 

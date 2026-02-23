@@ -1,4 +1,6 @@
 import React from 'react';
+import StudentExaminationReportPage from './pages/principal/StudentExaminationReportPage';
+import NotFound from './pages/NotFound';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -30,21 +32,33 @@ import EnquiryManagementContainer from './components/enquiry/EnquiryManagementCo
 import ClassManagement from './components/class-management/ClassManagement';
 import StudentAssignment from './components/class-management/StudentAssignment';
 import PrincipalEnquiryManagement from './components/principal/PrincipalEnquiryManagement';
-import PrincipalCorrespondenceManagement from './components/principal/PrincipalCorrespondenceManagement';
+import PrincipalAttendanceReports from './components/principal/PrincipalAttendanceReports';
+import PrincipalTimetablePage from './pages/timetable/PrincipalTimetablePage';
+import TeachersDashboard from './components/principal/TeachersDashboard';
+import StudentProfile from './pages/principal/StudentProfile';
 
 // Attendance Management
 import AttendanceManagement from './components/attendance/AttendanceManagement';
 import AttendanceDashboard from './components/attendance/AttendanceDashboard';
+import TeacherAttendanceManagement from './components/coordinator/TeacherAttendanceManagement';
+import CoordinatorTimetablePage from './pages/coordinator/CoordinatorTimetablePage';
 import TeacherDashboard from './components/dashboard/TeacherDashboard';
 
 // Reports
 import ReportsContainer from './components/reports/ReportsContainer';
+import StudentAttendanceManagement from './components/reports/StudentAttendanceManagement';
 
 // Correspondence Management
 import { CorrespondenceManagement } from './components/correspondence';
 
 // Timetable Management
 import TimetableManagement from './pages/timetable/TimetableManagement';
+
+// Examination Management
+import ExaminationPage from './pages/examinations/ExaminationPage';
+
+// Analytics
+import AnalyticsPage from './pages/analytics/AnalyticsPage';
 
 const App = () => {
   return (
@@ -91,14 +105,67 @@ const App = () => {
                 </AuthenticatedRoute>
               } />
 
-              {/* Principal Correspondence Management - Separate from InstituteAdmin */}
-              <Route path="/principal/correspondence" element={
+              {/* Principal Attendance Reports */}
+              <Route path="/principal/attendance-reports" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Principal']}
+                      requiredPermission={PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS}
+                    >
+                      <PrincipalAttendanceReports />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Principal Timetable Overview */}
+              <Route path="/principal/timetable" element={
                 <AuthenticatedRoute>
                   <Layout>
                     <ProtectedRoute
                       allowedRoles={['Principal']}
                     >
-                      <PrincipalCorrespondenceManagement />
+                      <PrincipalTimetablePage />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Principal Teachers Dashboard */}
+              <Route path="/principal/teachers" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Principal']}
+                    >
+                      <TeachersDashboard />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Principal Student Profiles */}
+              <Route path="/principal/student-profiles" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Principal']}
+                    >
+                      <StudentProfile />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Principal Student Examination Report */}
+              <Route path="/principal/student-examination-report" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Principal']}
+                    >
+                      <StudentExaminationReportPage />
                     </ProtectedRoute>
                   </Layout>
                 </AuthenticatedRoute>
@@ -113,6 +180,20 @@ const App = () => {
                       allowedRoles={['InstituteAdmin', 'IT', 'Receptionist', 'Coordinator']}
                     >
                       <EnquiryManagementContainer />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Dedicated Student Attendance Management Route */}
+              <Route path="/student-attendance" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      requiredPermission={PERMISSIONS.REPORTS.VIEW_ATTENDANCE_REPORTS}
+                      allowedRoles={['Principal', 'InstituteAdmin', 'IT']}
+                    >
+                      <StudentAttendanceManagement />
                     </ProtectedRoute>
                   </Layout>
                 </AuthenticatedRoute>
@@ -201,6 +282,32 @@ const App = () => {
                 </AuthenticatedRoute>
               } />
 
+              {/* Coordinator Teacher Attendance */}
+              <Route path="/coordinator/teacher-attendance" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Coordinator']}
+                    >
+                      <TeacherAttendanceManagement />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Coordinator Timetable Management */}
+              <Route path="/coordinator/timetable" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['Coordinator']}
+                    >
+                      <CoordinatorTimetablePage />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
               {/* General Attendance Dashboard */}
               <Route path="/attendance/dashboard" element={
                 <AuthenticatedRoute>
@@ -224,13 +331,16 @@ const App = () => {
                 <AuthenticatedRoute>
                   <Layout>
                     <ProtectedRoute
-                      allowedRoles={['InstituteAdmin', 'IT', 'Teacher']}
+                      allowedRoles={['InstituteAdmin', 'IT', 'Teacher', 'Coordinator']}
                       customCheck={(user) => {
                         // Allow Institute Admin and IT full access
                         if (['InstituteAdmin', 'IT'].includes(user?.role)) return true;
                         // For Teachers, they need to be either class incharge or floor incharge
                         // This will be validated in the component level
-                        return user?.role === 'Teacher';
+                        if (user?.role === 'Teacher') return true;
+                        // For Coordinators, allow access to mark student attendance
+                        if (user?.role === 'Coordinator') return true;
+                        return false;
                       }}
                     >
                       <AttendanceManagement />
@@ -262,6 +372,33 @@ const App = () => {
                       allowedRoles={['Teacher']}
                     >
                       <TimetableManagement />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Examination Management */}
+              <Route path="/examinations" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      requiredPermission={PERMISSIONS.EXAMINATION.VIEW_EXAMINATIONS}
+                      allowedRoles={['InstituteAdmin', 'IT', 'Teacher', 'Principal']}
+                    >
+                      <ExaminationPage />
+                    </ProtectedRoute>
+                  </Layout>
+                </AuthenticatedRoute>
+              } />
+
+              {/* Analytics */}
+              <Route path="/analytics" element={
+                <AuthenticatedRoute>
+                  <Layout>
+                    <ProtectedRoute
+                      allowedRoles={['InstituteAdmin', 'IT', 'Principal', 'Teacher', 'Coordinator']}
+                    >
+                      <AnalyticsPage />
                     </ProtectedRoute>
                   </Layout>
                 </AuthenticatedRoute>
@@ -408,7 +545,7 @@ const App = () => {
 
               {/* Default redirects */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
             <ToastContainer />
           </DashboardProvider>

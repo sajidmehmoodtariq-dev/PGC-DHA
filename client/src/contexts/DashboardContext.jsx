@@ -80,8 +80,8 @@ export const DashboardProvider = ({ children }) => {
 
       // Fetch initial data
       const [studentsRes, staffRes] = await Promise.all([
-        api.get('/users?role=Student&limit=1000'),
-        api.get('/users?role=Teacher&limit=1000')
+        api.get('/users?role=Student'),
+        api.get('/users?role=Teacher')
       ]);
       
       const students = studentsRes.data?.data?.users || [];
