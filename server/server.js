@@ -41,27 +41,32 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Database Connection with caching for serverless
-let isConnected = false;
-
 const connectDB = async () => {
-  if (isConnected) return;
+  // Already connected
+  if (mongoose.connection.readyState === 1) return;
+
+  // Connection in progress — wait for it
+  if (mongoose.connection.readyState === 2) {
+    await new Promise((resolve, reject) => {
+      mongoose.connection.once('connected', resolve);
+      mongoose.connection.once('error', reject);
+    });
+    return;
+  }
+
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+    await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
+      bufferCommands: false, // Fail fast instead of buffering when disconnected
+      maxPoolSize: 10,
     });
-    isConnected = true;
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    console.log(`MongoDB Connected: ${mongoose.connection.host}`);
   } catch (error) {
     console.error('Database connection error:', error);
-    // Do not call process.exit in serverless environments
+    throw error; // Propagate so the request returns a proper error
   }
 };
-
-// Connect to database
-connectDB();
 
 // Import Routes
 const authRoutes = require('./routes/auth');
@@ -80,6 +85,20 @@ const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
 const teacherAnalyticsRoutes = require('./routes/teacherAnalytics');
 const studentProfileRoutes = require('./routes/studentProfiles');
+
+// Ensure DB connection on every request (critical for serverless/Vercel)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error('DB connection middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database connection failed. Please try again.',
+    });
+  }
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
